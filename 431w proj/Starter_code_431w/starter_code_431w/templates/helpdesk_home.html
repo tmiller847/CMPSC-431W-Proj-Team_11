@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>HelpDesk Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #e9edf2;
+        }
+
+        .content {
+            width: 500px;
+            margin: 100px auto;
+            background: white;
+            padding: 25px;
+            border: 1px solid #ccc;
+        }
+
+        h1 {
+            margin-top: 0;
+            color: #dc3545;
+        }
+
+        .user {
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        .note {
+            margin-top: 20px;
+            font-size: 13px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+
+<div class="content">
+    <h1>HelpDesk Dashboard</h1>
+
+    <div class="user">
+        Logged in as: <strong>{{ email }}</strong><br>
+        Role: <strong>HelpDesk</strong>
+    </div>
+
+    <div class="note">
+        You can manage user requests here.
+    </div>
+</div>
+
+</body>
+</html>

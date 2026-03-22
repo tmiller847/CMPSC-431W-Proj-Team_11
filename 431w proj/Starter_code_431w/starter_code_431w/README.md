@@ -22,11 +22,24 @@ Optional override (PowerShell):
 - `$env:NITTANY_AUCTION_DB_PATH="C:\full\path\to\NittanyAuction.db"`
 - `python app.py`
 
+## Authentication
+- User passwords are stored in the User table in hashed form using SHA-256. 
+- During login, the entered password is hashed using SHA-256 and is compared with the stored value in the database.
+- Plain-text passwords are never stored.
+
+## Login Handling
+After successful authentication, the system determines the user's role by checking the email field in the Seller, Bidder, and Helpdesk databases. 
+
+If the user has one role, it redirects to the corresponding page.
+If the user has multiple roles, it displays a role selection page allowing the user to choose which role to continue as. 
+
 ## Quick Integration Test
 
 1. Open the login page.
 2. Enter a valid user email/password from the `User` table.
 3. Expected result:
-   - success -> routed to `role_home.html`
+   - success
+     - single role -> redirected to role-specific dashboard
+     - multiple roles -> redirected to role selection page
    - failure -> `Invalid email or password.`
 
