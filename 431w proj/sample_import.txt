@@ -1,0 +1,8 @@
+.mode csv
+.import Adress.csv Address
+.import Credit_Cards.csv Credit_Card
+.import --skip 1 Users.csv User
+.import --skip 1 Bidders.csv Bidder
+.import --skip 1 Helpdesk.csv Helpdesk
+.import --skip 1 Local_Vendors.csv Local_Vendor
+.import --skip 1 Sellers.csv Seller

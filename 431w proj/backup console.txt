@@ -36,14 +36,15 @@ CREATE TABLE Bid(bid_ID INTEGER PRIMARY KEY,
                  FOREIGN KEY(bidder_email) REFERENCES User(email));
 
 CREATE TABLE Category(parent_category TEXT,
-                      category_name TEXT PRIMARY KEY);
+                      category_name TEXT PRIMARY KEY,
+                      FOREIGN KEY(parent_category) REFERENCES Category(category_name));
 
 CREATE TABLE Credit_Card(credit_card_num TEXT PRIMARY KEY,
                          card_type TEXT,
                          expire_month INTEGER,
                          expire_year INTEGER,
                          security_code INTEGER,
-                         owner_email TEXT UNIQUE,
+                         owner_email TEXT,
                          FOREIGN KEY(owner_email) REFERENCES User(email));
 
 CREATE TABLE Helpdesk(email TEXT PRIMARY KEY,
@@ -51,7 +52,7 @@ CREATE TABLE Helpdesk(email TEXT PRIMARY KEY,
                       FOREIGN KEY(email) REFERENCES User(email));
 
 CREATE TABLE Local_Vendor(email	TEXT PRIMARY KEY,
-                          business_name TEXT UNIQUE,
+                          business_name TEXT,
                           business_address_ID TEXT,
                           customer_service_phone_number TEXT,
                           FOREIGN KEY(email) REFERENCES User(email),
@@ -96,6 +97,3 @@ CREATE TABLE User(email TEXT PRIMARY KEY,
 CREATE TABLE Zipcode(zipcode INTEGER PRIMARY KEY,
                      city TEXT,
                      state TEXT);
-
-.mode csv
-.import --skip 1 Address.csv Address
