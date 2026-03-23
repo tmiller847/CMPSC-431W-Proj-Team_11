@@ -7,3 +7,6 @@ The "sample_import.txt" file contains the commands to be run via SQLite in the c
 
 INTENDED FUNCTION:
 Users are brought directly onto the login page, where they enter their username and password (the latter of which is securely stored). If details are correct, they will be directed to their respective login page (or choice of available login pages for non-bidders). If the email/password do not exist, or are wrong, the user will be denied. If they do exist, but have no role (which is possible with the provided dataset) they will also be denied.
+
+HOW TO RUN:
+app.py can be found under Starter_code_431w/starter_code_431w
