@@ -88,14 +88,14 @@ def login():
                         if seller:
                             roles.append("Seller")
                         if bidder:
-                            roles.append("Buyer")
+                            roles.append("Bidder")
                         if helpdesk:
                             roles.append("HelpDesk")
 
                         if len(roles) == 1:
                             if roles[0] == "Seller":
                                 return render_template("seller_home.html", email=email)
-                            elif roles[0] == "Buyer":
+                            elif roles[0] == "Bidder":
                                 return render_template("buyer_home.html", email=email)
                             elif roles[0] == "HelpDesk":
                                 return render_template("helpdesk_home.html", email=email)
@@ -125,7 +125,7 @@ def choose_role():
 
     if role == "Seller":
         return render_template("seller_home.html", email=email)
-    elif role == "Buyer":
+    elif role == "Bidder":
         return render_template("buyer_home.html", email=email)
     elif role == "HelpDesk":
         return render_template("helpdesk_home.html", email=email)
