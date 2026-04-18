@@ -3,7 +3,7 @@
 ## Startup Steps
 
 1. Open a terminal in this folder:
-   - `431w proj/Starter_code_431w/starter_code_431w`
+   - `Starter_code_431w`
 2. Install dependencies:
    - `python -m pip install -r requirements.txt`
 3. Run the backend:
@@ -15,7 +15,7 @@
 
 By default, the app reads from:
 
-- `431w proj/NittanyAuctionDataset_v1/NittanyAuctionDataset_v1/NittanyAuction.db`
+- `NittanyAuctionDataset_v1/NittanyAuction.db`
 
 Optional override (PowerShell):
 

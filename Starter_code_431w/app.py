@@ -10,9 +10,9 @@ app.secret_key = "phase2-demo-key"
 
 host = 'http://127.0.0.1:5000/'
 BASE_DIR = Path(__file__).resolve().parent
-PROJECT_DIR = BASE_DIR.parent.parent
+PROJECT_DIR = BASE_DIR.parent
 DEFAULT_DATASET_DB_PATH = (
-    PROJECT_DIR / "NittanyAuctionDataset_v1" / "NittanyAuctionDataset_v1" / "NittanyAuction.db"
+    PROJECT_DIR / "NittanyAuctionDataset_v1" / "NittanyAuction.db"
 )
 DB_PATH = Path(os.getenv("NITTANY_AUCTION_DB_PATH", str(DEFAULT_DATASET_DB_PATH)))
 SCHEMA_PATH = BASE_DIR.parent.parent / "backup console.txt"
