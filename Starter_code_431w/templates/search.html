@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Product Search</title>
+</head>
+<body>
+    <h1>Product Search</h1>
+
+    <form method="GET" action="/search">
+        <label>Keyword:</label>
+        <input type="text" name="keyword" value="{{ keyword }}">
+
+        <label>Min Price:</label>
+        <input type="text" name="min_price" value="{{ min_price }}">
+
+        <label>Max Price:</label>
+        <input type="text" name="max_price" value="{{ max_price }}">
+
+        <button type="submit">Search</button>
+    </form>
+
+    {% if error %}
+        <p>error</p>
+    {% endif %}
+
+    <hr>
+
+    {% for product in results %}
+        <div>
+            <h3>
+                <a href="/product/{{ product['Listing_ID'] }}">
+                    {{ product['Auction_Title'] }}
+                </a>
+            </h3>
+            <p>Product: {{ product['Product_Name'] }}</p>
+            <p>Category: {{ product['Category'] }}</p>
+            <p>Seller: {{ product['Seller_Email'] }}</p>
+            <p>Reserve Price: {{ product['Reserve_Price'] }}</p>
+            <p>{{ product['Product_Description'] }}</p>
+        </div>
+        <hr>
+    {% endfor %}
+
+    {% if not results %}
+        <p>No matching products found.</p>
+    {% endif %}
+</body>
+</html>

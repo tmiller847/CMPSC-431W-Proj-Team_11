@@ -92,16 +92,21 @@ def login():
                         if helpdesk:
                             roles.append("HelpDesk")
 
+
                         if len(roles) == 1:
+                            session["role"] = roles[0]
+                            session["email"] = email
+                            session["roles"] = roles
                             if roles[0] == "Seller":
                                 return render_template("seller_home.html", email=email)
                             elif roles[0] == "Bidder":
-                                return render_template("buyer_home.html", email=email)
+                                return render_template("bidder_home.html", email=email)
                             elif roles[0] == "HelpDesk":
                                 return render_template("helpdesk_home.html", email=email)
 
                         elif len(roles) > 1:
                             session["email"] = email
+                            session["roles"] = roles
                             return render_template("select_role.html", email=email, roles=roles)
 
                         else:
@@ -117,20 +122,138 @@ def login():
 
 @app.route('/choose_role', methods=['POST'])
 def choose_role():
-    email = request.form.get("email", "").strip()
+    email = session.get("email")
+    roles = session.get("roles", [])
     role = request.form.get("role", "").strip()
+
 
     if not email or not role:
         return render_template("login.html", error="Role selection failed.")
-
+    if role not in roles:
+        return render_template("login.html", error="Invalid role selected.")
+    session["role"] = role
     if role == "Seller":
         return render_template("seller_home.html", email=email)
     elif role == "Bidder":
-        return render_template("buyer_home.html", email=email)
+        return render_template("bidder_home.html", email=email)
     elif role == "HelpDesk":
         return render_template("helpdesk_home.html", email=email)
 
     return render_template("login.html", error="Invalid role selected.")
+
+
+@app.route('/search', methods=['GET'])
+def search():
+    error = None
+    results = []
+
+    keyword = request.args.get('keyword', '').strip()
+    min_price = request.args.get('min_price', '').strip()
+    max_price = request.args.get('max_price', '').strip()
+
+    try:
+        with get_connection() as connection:
+            query = """
+                SELECT Listing_ID, Auction_Title, Product_Name, Product_Description,
+                       Category, Seller_Email, Reserve_Price, Status
+                FROM Auction_Listing
+                WHERE Status = 1
+            """
+            params = []
+
+            if keyword:
+                query += """
+                    AND (
+                        LOWER(Auction_Title) LIKE ?
+                        OR LOWER(Product_Description) LIKE ?
+                        OR LOWER(Category) LIKE ?
+                        OR LOWER(Seller_Email) LIKE ?
+                    )
+                """
+                like_keyword = "%" + keyword.lower() + "%"
+                params.extend([like_keyword, like_keyword, like_keyword, like_keyword])
+
+            if min_price:
+                query += " AND CAST(SUBSTR(Reserve_Price, 2) AS REAL) >= ?"
+                params.append(min_price)
+
+            if max_price:
+                query += " AND CAST(SUBSTR(Reserve_Price, 2) AS REAL) <= ?"
+                params.append(max_price)
+
+            results = connection.execute(query, params).fetchall()
+
+    except sql.Error as e:
+        print("Database error:", e)
+        error = "Database error while searching."
+
+    return render_template(
+        "search.html",
+        results=results,
+        error=error,
+        keyword=keyword,
+        min_price=min_price,
+        max_price=max_price
+    )
+
+@app.route('/product/<int:listing_id>')
+def product_page(listing_id):
+    if "email" not in session:
+        return render_template("login.html", error="Please log in first.")
+
+
+    error = None
+    product = None
+    bid_count = 0
+    highest_bid = None
+    remaining_bids = 0
+
+    try:
+        with get_connection() as connection:
+            product = connection.execute("""
+                SELECT listing_ID, auction_title, product_name, product_description,
+                       category, seller_email, quantity, reserve_price, max_bids, status
+                FROM Auction_Listing
+                WHERE listing_ID = ?
+            """, (listing_id,)).fetchone()
+
+            if not product:
+                return render_template("product.html", error="Product not found.", product=None)
+
+            bid_count_row = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM Bid
+                WHERE listing_ID = ?
+            """, (listing_id,)).fetchone()
+
+            highest_bid_row = connection.execute(
+                """
+                SELECT MAX(bid_price) AS highest_bid
+                FROM Bid
+                WHERE listing_ID = ?
+                """, (listing_id,)).fetchone()
+
+            bid_count = bid_count_row["count"] if bid_count_row else 0
+            highest_bid = highest_bid_row["highest_bid"] if highest_bid_row else None
+            remaining_bids = product["max_bids"] - bid_count
+
+    except sql.Error as e:
+        print("Database error:", e)
+        error = "Database error while loading product."
+
+    return render_template(
+        "product.html",
+        product=product,
+        bid_count=bid_count,
+        highest_bid=highest_bid,
+        remaining_bids=remaining_bids,
+        error=error
+    )
+@app.route('/logout')
+def logout():
+    session.clear()
+    return render_template("login.html", error="Logged out successfully.")
 
 if __name__ == "__main__":
     app.run()
