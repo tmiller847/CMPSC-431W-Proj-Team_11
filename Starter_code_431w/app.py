@@ -22,6 +22,13 @@ SCHEMA_PATH = BASE_DIR.parent.parent / "backup console.txt"
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
+def parse_reserve_price(reserve_price_str):
+    # reserve_price stored as '$50' in db, cast string into a float.
+    try:
+        return float(reserve_price_str.replace('$', '').strip())
+    except (ValueError, AttributeError):
+        return 0.0
+
 def get_connection():
     connection = sql.connect(DB_PATH)
     connection.row_factory = sql.Row
@@ -250,6 +257,144 @@ def product_page(listing_id):
         remaining_bids=remaining_bids,
         error=error
     )
+
+
+
+@app.route('/bid/<int:listing_id>', methods=['GET', 'POST'])
+def bid_page(listing_id):
+    if "email" not in session:
+        return render_template("login.html", error="Please log in first.")
+
+
+
+    bidder_email = session["email"]
+    feedback = None
+    bid_accepted = False
+
+    try:
+        with get_connection() as con:
+            listing = con.execute("""
+                SELECT listing_ID, auction_title, product_name, seller_email,
+                       reserve_price, max_bids, status
+                FROM Auction_Listing
+                WHERE listing_ID = ?
+            """, (listing_id,)).fetchone()
+
+            if not listing:
+                return render_template("product.html", error="Listing not found.", product=None)
+
+            bid_count = con.execute(
+                "SELECT COUNT(*) FROM Bid WHERE listing_ID = ?", (listing_id,)
+            ).fetchone()[0]
+
+            highest_bid_row = con.execute(
+                "SELECT MAX(bid_price) FROM Bid WHERE listing_ID = ?", (listing_id,)
+            ).fetchone()
+            highest_bid = highest_bid_row[0] if highest_bid_row[0] is not None else 0
+
+            last_bidder_row = con.execute(
+                "SELECT bidder_email FROM Bid WHERE listing_ID = ? ORDER BY bid_ID DESC LIMIT 1",
+                (listing_id,)
+            ).fetchone()
+            last_bidder = last_bidder_row["bidder_email"] if last_bidder_row else None
+
+            remaining_bids = listing["max_bids"] - bid_count
+            reserve_price = parse_reserve_price(listing["reserve_price"])
+
+
+            # validate all conditions
+            pre_errors = []
+            if listing["status"] != 1:
+                pre_errors.append("This auction is not active.")
+            if listing["seller_email"].strip().lower() == bidder_email.strip().lower():
+                pre_errors.append("You cannot bid on your own listing.")
+            if remaining_bids <= 0:
+                pre_errors.append("This auction has ended (no bids remaining).")
+
+
+            if request.method == 'POST' and not pre_errors:
+                input_bid_str = request.form.get('bid_amount', '').strip()
+
+                # reject if current bid belongs to bidder
+                if last_bidder and last_bidder.strip().lower() == bidder_email.strip().lower():
+                    feedback = ("rejected", "You placed the last bid. Wait for another bidder before bidding again.")
+                elif not input_bid_str:
+                    feedback = ("rejected", "Please enter a bid amount.")
+
+                else:
+                    try:
+                        input_bid = float(input_bid_str)
+                    except ValueError:
+                        feedback = ("rejected", "Invalid bid amount.")
+                        input_bid = None
+
+                    if feedback is None:
+                        min_required = highest_bid + 1
+                        if input_bid < min_required:
+                            feedback = ("rejected", f"Bid too low. Must be at least ${min_required:.2f} (current highest: ${highest_bid:.2f}).")
+                        else:
+                            # insert bid into db if all checks passed
+                            con.execute("""
+                                INSERT INTO Bid (seller_email, listing_ID, bidder_email, bid_price)
+                                VALUES (?, ?, ?, ?)
+                            """, (listing["seller_email"], listing_id, bidder_email, int(input_bid)))
+                            con.commit()
+                            bid_accepted = True
+                            bid_count += 1
+                            highest_bid = int(input_bid)
+                            remaining_bids = listing["max_bids"] - bid_count
+                            last_bidder = bidder_email
+
+                            if bid_count >= listing["max_bids"]:
+                                if highest_bid >= reserve_price:
+                                    con.execute(
+                                        "UPDATE Auction_Listing SET status = 2 WHERE listing_ID = ?",
+                                        (listing_id,)
+                                    )
+                                    con.commit()
+
+                                    feedback = ("winner",
+                                        f"Auction ended! You won with a bid of ${highest_bid:.2f}. "
+                                        f"Please complete payment.")
+                                else:
+                                    # highest bid did not meet reserve
+                                    con.execute(
+                                        "UPDATE Auction_Listing SET status = 3 WHERE listing_ID = ?",
+                                        (listing_id,)
+                                    )
+                                    con.commit()
+
+                                    feedback = ("ended_no_sale",
+                                        "Auction ended. The highest bid did not meet the reserve price. "
+                                        "The seller will decide whether to accept or cancel.")
+                            else:
+                                feedback = ("accepted", f"Bid of ${highest_bid:.2f} placed successfully! {remaining_bids} bid(s) remaining.")
+
+
+            listing = con.execute("""
+                SELECT listing_ID, auction_title, product_name, seller_email,
+                       reserve_price, max_bids, status
+                FROM Auction_Listing
+                WHERE listing_ID = ?
+            """, (listing_id,)).fetchone()
+
+    except sql.Error as e:
+        print("DB error in bid_page:", e)
+        return render_template("bid.html", error="Database error.", listing=None)
+
+    return render_template(
+        "bid.html",
+        listing=listing,
+        bid_count=bid_count,
+        highest_bid=highest_bid if highest_bid else 0,
+        remaining_bids=remaining_bids,
+        last_bidder=last_bidder,
+        bidder_email=bidder_email,
+        pre_errors=pre_errors,
+        feedback=feedback,
+        bid_accepted=bid_accepted,
+    )
+
 @app.route('/logout')
 def logout():
     session.clear()
