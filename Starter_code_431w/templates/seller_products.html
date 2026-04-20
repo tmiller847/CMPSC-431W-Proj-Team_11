@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>NittanyAuction Seller Products</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #e9edf2;
+            margin: 0;
+            padding: 30px;
+        }
+
+        .box {
+            width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+        }
+
+        h2, h3 {
+            margin-top: 0;
+            text-align: center;
+        }
+
+        label {
+            display: block;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 6px;
+            margin-top: 4px;
+            margin-bottom: 10px;
+            box-sizing: border-box;
+        }
+
+        textarea {
+            resize: vertical;
+        }
+
+        button {
+            padding: 8px 14px;
+            background: #2a6ebb;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #1f5692;
+        }
+
+        .message {
+            color: green;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 13px;
+        }
+
+        .error {
+            color: red;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 13px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        .top-link {
+            text-align: center;
+            margin-top: 15px;
+            font-size: 12px;
+        }
+
+        .top-link a {
+            color: #2a6ebb;
+            text-decoration: none;
+        }
+
+        .top-link a:hover {
+            text-decoration: underline;
+        }
+
+        .inline-form {
+            display: inline;
+        }
+
+        .remove-btn {
+            background: #c94b4b;
+        }
+
+        .remove-btn:hover {
+            background: #a83939;
+        }
+    </style>
+</head>
+<body>
+
+<div class="box">
+    <h2>Manage My Listings</h2>
+
+    {% if message %}
+        <div class="message">{{ message }}</div>
+    {% endif %}
+
+    {% if error %}
+        <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <h3>Create New Listing</h3>
+
+    <form method="POST" action="{{ url_for('seller_products') }}">
+        <input type="hidden" name="form_type" value="create">
+
+        <label>Title</label>
+        <input type="text" name="title" required>
+
+        <label>Description</label>
+        <textarea name="description" rows="4" required></textarea>
+
+        <label>Category</label>
+        <select name="category" required>
+            <option value="">Select a category</option>
+            <option value="Books">Books</option>
+            <option value="Electronics">Electronics</option>
+            <option value="Clothing">Clothing</option>
+            <option value="Furniture">Furniture</option>
+        </select>
+
+        <label>Reserve Price</label>
+        <input type="number" step="0.01" name="reserve_price" required>
+
+        <label>Max Bids</label>
+        <input type="number" name="max_bids" required>
+
+        <button type="submit">Create Listing</button>
+    </form>
+
+    <h3>My Current Listings</h3>
+
+    <table>
+        <tr>
+            <th>Title</th>
+            <th>Category</th>
+            <th>Reserve Price</th>
+            <th>Max Bids</th>
+            <th>Status</th>
+            <th>Actions</th>
+        </tr>
+
+        {% for product in products %}
+        <tr>
+            <td>{{product.title}}</td>
+            <td>{{ product.category }}</td>
+            <td>${{ product.reserve_price }}</td>
+            <td>{{ product.max_bids }}</td>
+            <td>{{ product.status }}</td>
+            <td>
+                <form method="POST" action="{{ url_for('seller_products') }}" class="inline-form">
+                    <input type="hidden" name="form_type" value="delete">
+                    <input type="hidden" name="product_id" value="{{ product.id }}">
+                    <button type="submit" class="remove-btn">Remove</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <div class="top-link">
+        <a href="{{ url_for('seller_home') }}">Back to Seller Home</a>
+    </div>
+</div>
+
+</body>
+</html>

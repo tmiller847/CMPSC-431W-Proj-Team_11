@@ -541,10 +541,100 @@ def payment_page(listing_id):
         error=error,
         success=success,
     )
+
 @app.route('/logout')
 def logout():
     session.clear()
     return render_template("login.html", error="Logged out successfully.")
+
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+
+    return render_template("signup.html")
+
+@app.route("/profile", methods=["GET", "POST"])
+def profile():
+    # test examples
+    user = {
+        "email": "testuser@psu.edu",
+        "name": "John Doe",
+        "phone": "555-123-4567",
+        "street": "123 College Ave",
+        "city": "State College",
+        "state": "PA",
+        "zipcode": "12345"
+    }
+
+    if request.method == "POST":
+        user["name"] = request.form["name"]
+        user["phone"] = request.form["phone"]
+        user["street"] = request.form["street"]
+        user["city"] = request.form["city"]
+        user["state"] = request.form["state"]
+        user["zipcode"] = request.form["zipcode"]
+
+        password = request.form["password"]
+
+        return render_template("profile.html", user=user, message="Profile updated successfully.")
+
+    return render_template("profile.html", user=user)
+
+@app.route("/seller_products", methods=["GET", "POST"])
+def seller_products():
+    # testing examples
+    products = [
+        {
+            "title": "Calculus Textbook",
+            "category": "Books",
+            "reserve_price": "25.00",
+            "max_bids": 10,
+            "status": "Active"
+        },
+        {
+            "title": "Desk Lamp",
+            "category": "Furniture",
+            "reserve_price": "15.00",
+            "max_bids": 8,
+            "status": "Inactive"
+        }
+    ]
+
+    if request.method == "POST":
+        new_product = {
+            "title": request.form["title"],
+            "category": request.form["category"],
+            "reserve_price": request.form["reserve_price"],
+            "max_bids": request.form["max_bids"],
+            "status": "Active"
+        }
+
+        products.append(new_product)
+
+        return render_template(
+            "seller_products.html",
+            products=products,
+            message="Listing created successfully."
+        )
+
+    return render_template("seller_products.html", products=products)
+
+@app.route("/help_request", methods=["GET", "POST"])
+def help_request():
+    # test examples
+    if request.method == "POST":
+        request_type = request.form["request_type"]
+        description = request.form["description"]
+
+        print("Help Request Submitted")
+        print("Type:", request_type)
+        print("Description:", description)
+
+        return render_template(
+            "help_request.html",
+            message="Your request was sent successfully."
+        )
+
+    return render_template("help_request.html")
 
 if __name__ == "__main__":
     app.run()
