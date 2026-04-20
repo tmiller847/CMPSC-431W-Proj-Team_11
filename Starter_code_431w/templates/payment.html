@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Payment</title>
+</head>
+
+<body>
+    <h1>Complete Payment</h1>
+    <a href="/logout">Logout</a>
+
+    {% if error %}
+        <p>{{ error }}</p>
+    {% endif %}
+
+    {% if success %}
+        <p>Payment successful! Your transaction has been recorded.</p>
+        <a href="/search">Browse more products</a>
+    {% elif listing %}
+        <h2>{{ listing['auction_title'] }}</h2>
+        <p><strong>Seller:</strong> {{ listing['seller_email'] }}</p>
+        <p><strong>Amount Due:</strong> ${{ winning_price }}</p>
+
+        <form method="POST">
+
+
+
+
+            {% if saved_cards %}
+                <h3>Use a Saved Card</h3>
+
+                {% for card in saved_cards %}
+                    <label>
+                        <input type="radio" name="use_saved" value="{{ card['credit_card_num'] }}">
+                        {{ card['card_type'].strip() }} ending in {{ card['credit_card_num'][-4:] }}
+                        (expires {{ card['expire_month'] }}/{{ card['expire_year'] }})
+                    </label><br>
+                {% endfor %}
+                <br>
+            {% endif %}
+
+            <h3>Enter a New Card</h3>
+            <p>
+                <label>Card Number:</label><br>
+                <input type="text" name="new_card_num" placeholder="XXXX-XXXX-XXXX-XXXX">
+            </p>
+            <p>
+                <label>Card Type:</label><br>
+                <input type="text" name="card_type" placeholder="Visa / Master / etc.">
+            </p>
+            <p>
+                <label>Expiration Month:</label><br>
+                <input type="number" name="expire_month" min="1" max="12" placeholder="MM">
+            </p>
+            <p>
+                <label>Expiration Year:</label><br>
+                <input type="number" name="expire_year" min="2025" placeholder="YYYY">
+            </p>
+            <p>
+                <label>Security Code:</label><br>
+                <input type="number" name="security_code" placeholder="CVV">
+            </p>
+
+            <button type="submit">Submit Payment</button>
+        </form>
+
+    {% endif %}
+
+</body>
+</html>

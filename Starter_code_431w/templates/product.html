@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Product Page</title>
+</head>
+
+
+<body>
+
+    <h1>Product Details</h1>
+
+    <a href="/search">Back to Search</a>
+    <a href="/logout">Logout</a>
+
+    {% if error %}
+        <p>error </p>
+
+    {% endif %}
+
+    {% if product %}
+        <h2>{{ product['auction_title'] }}</h2>
+
+        <p><strong>Product Name:</strong> {{ product['product_name'] }}</p>
+        <p><strong>Description:</strong> {{ product['product_description'] }}</p>
+        <p><strong>Category:</strong> {{ product['category'] }}</p>
+        <p><strong>Seller:</strong> {{ product['seller_email'] }}</p>
+        <p><strong>Quantity:</strong> {{ product['quantity'] }}</p>
+        <p><strong>Reserve Price:</strong> {{ product['reserve_price'] }}</p>
+        <p><strong>Max Bids:</strong> {{ product['max_bids'] }}</p>
+        <p><strong>Number of Bids:</strong> {{ bid_count }}</p>
+        <p><strong>Remaining Bids:</strong> {{ remaining_bids }}</p>
+
+        {% if highest_bid %}
+            <p><strong>Highest Bid:</strong> ${{ highest_bid }}</p>
+        {% else %}
+            <p><strong>Highest Bid:</strong> No bids yet</p>
+        {% endif %}
+
+        {% if product['status'] == 1 %}
+            <p><strong>Status:</strong> Active</p>
+            <a href="/bid/{{ product['listing_ID'] }}">Place Bid</a>
+        {% else %}
+            <p><strong>Status:</strong> Not Active</p>
+
+        {% endif %}
+    {% endif %}
+
+
+</body>
+</html>

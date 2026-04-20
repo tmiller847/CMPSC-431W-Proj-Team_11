@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+    <title>Bid Page</title>
+</head>
+
+<body>
+
+    <h1>Place a Bid</h1>
+
+    <a href="/product/{{ listing['listing_ID'] }}">Back to Product</a>
+    <a href="/logout">Logout</a>
+
+    {% if error %}
+        <p>{{ error }}</p>
+    {% endif %}
+
+
+
+    {% if pre_errors %}
+        {% for e in pre_errors %}
+            <p>{{ e }}</p>
+        {% endfor %}
+
+
+    {% elif listing %}
+        <h2>{{ listing['auction_title'] }}</h2>
+
+        <p><strong>Seller:</strong> {{ listing['seller_email'] }}</p>
+        <p><strong>Bids Placed:</strong> {{ bid_count }} / {{ listing['max_bids'] }}</p>
+        <p><strong>Remaining Bids:</strong> {{ remaining_bids }}</p>
+
+
+        {% if highest_bid %}
+            <p><strong>Highest Bid:</strong> ${{ highest_bid }}</p>
+        {% else %}
+            <p><strong>Highest Bid:</strong> No bids yet</p>
+        {% endif %}
+
+        {% if listing['status'] == 1 %}
+            {% if last_bidder and last_bidder.strip().lower() == bidder_email.strip().lower() and not bid_accepted %}
+                <p>You placed the last bid. Wait for another bidder before bidding again.</p>
+            {% else %}
+                <form method="POST">
+                    <label>Your Bid (minimum ${{ highest_bid + 1 }}):</label>
+                    <input type="number" name="bid_amount" min="{{ highest_bid + 1 }}" step="1" required>
+                    <button type="submit">Place Bid</button>
+                </form>
+            {% endif %}
+        {% elif listing['status'] == 2 %}
+            <p>This auction has ended. A winner has been selected.</p>
+        {% elif listing['status'] == 3 %}
+            <p>This auction has ended. The reserve price was not met, waiting for seller decision.</p>
+        {% else %}
+            <p>This listing is no longer active.</p>
+        {% endif %}
+
+
+
+
+    {% endif %}
+
+</body>
+</html>
