@@ -58,12 +58,18 @@ CREATE TABLE Local_Vendor(email	TEXT PRIMARY KEY,
                           FOREIGN KEY(email) REFERENCES User(email),
                           FOREIGN KEY(business_address_ID) REFERENCES Address(address_id));
 
+CREATE TABLE Notification(nid INTEGER PRIMARY KEY,
+			  email TEXT,
+			  message TEXT,
+			  date DATE,
+			  FOREIGN KEY(email) REFERENCES User(email));
+
 CREATE TABLE Rating(bidder_email TEXT,
                     seller_email TEXT,
                     date DATE,
                     rating INTEGER,
                     rating_desc TEXT,
-                    PRIMARY KEY(bidder_email, seller_email),
+                    PRIMARY KEY(bidder_email, seller_email, date),
                     FOREIGN KEY(bidder_email) REFERENCES User(email),
                     FOREIGN KEY(seller_email) REFERENCES User(email));
 
@@ -93,6 +99,12 @@ CREATE TABLE Transact(transaction_ID INTEGER PRIMARY KEY,
 
 CREATE TABLE User(email TEXT PRIMARY KEY,
                   password TEXT);
+
+CREATE TABLE Wishlist(email TEXT,
+		      listing_ID INTEGER,
+		      PRIMARY KEY(email, listing_ID),
+		      FOREIGN KEY(email) REFERENCES User(email),
+		      FOREIGN KEY(listing_ID) REFERENCES Auction_Listing(listing_ID));
 
 CREATE TABLE Zipcode(zipcode INTEGER PRIMARY KEY,
                      city TEXT,

@@ -1,8 +1,17 @@
+NOTE: replace "*.csv" with the absolute file path to that csv. This differes across systems.
+
 .mode csv
-.import Address.csv Address
-.import Credit_Cards.csv Credit_Card
-.import --skip 1 Users.csv User
+.import --skip 1 Address.csv Address
+.import --skip 1 Auction_Listings.csv Auction_Listing
 .import --skip 1 Bidders.csv Bidder
+.import --skip 1 Bids.csv Bid
+.import --skip 1 Categories.csv Category
+.import --skip 1 Credit_Cards.csv Credit_Card
 .import --skip 1 Helpdesk.csv Helpdesk
 .import --skip 1 Local_Vendors.csv Local_Vendor
+.import --skip 1 Ratings.csv Rating
+.import --skip 1 Requests.csv Request
 .import --skip 1 Sellers.csv Seller
+.import --skip 1 Transactions.csv Transact
+.import --skip 1 Users.csv User
+.import --skip 1 Zipcode_Info.csv Zipcode
