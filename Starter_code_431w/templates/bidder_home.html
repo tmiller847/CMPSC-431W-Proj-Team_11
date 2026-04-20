@@ -9,7 +9,7 @@
         }
 
         .content {
-            width: 500px;
+            width: 700px;
             margin: 100px auto;
             background: white;
             padding: 25px;
@@ -21,6 +21,12 @@
             color: #28a745;
         }
 
+        h2 {
+            font-size: 16px;
+            margin-top: 25px;
+            color: #333;
+        }
+
         .user {
             margin-top: 15px;
             font-size: 14px;
@@ -30,6 +36,34 @@
             margin-top: 20px;
             font-size: 13px;
             color: #666;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 13px;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 8px 10px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        tr:hover {
+            background-color: #fafafa;
+        }
+
+        .empty {
+            font-size: 13px;
+            color: #888;
+            margin-top: 10px;
         }
     </style>
 </head>
@@ -45,8 +79,59 @@
 
     <div class="note">
         You can browse and place bids here.
-        <a href="/search">Product Search</a>
+        <a href="/search">Product Search</a> |
+        <a href="/logout">Logout</a>
     </div>
+
+    <h2>Your Auctions</h2>
+
+    {% if auctions %}
+        <table>
+
+            <tr>
+                <th>Title</th>
+                <th>Seller</th>
+                <th>Status</th>
+                <th>Your Highest Bid</th>
+                <th>Current Highest Bid</th>
+                <th>Bids</th>
+                <th>Action</th>
+            </tr>
+            {% for a in auctions %}
+
+
+                <tr>
+                    <td><a href="/product/{{ a['listing_ID'] }}">{{ a['auction_title'] }}</a></td>
+                    <td>{{ a['seller_email'] }}</td>
+                    <td>
+                        {% if a['status'] == 1 %}Active
+                        {% elif a['status'] == 2 %}Sold
+                        {% elif a['status'] == 3 %}Awaiting seller decision
+                        {% else %}Inactive
+                        {% endif %}
+                    </td>
+                    <td>${{ a['my_highest_bid'] }}</td>
+                    <td>${{ a['highest_bid'] }}</td>
+                    <td>{{ a['bid_count'] }} / {{ a['max_bids'] }}</td>
+                    <td>
+                        {% if a['status'] == 1 %}
+                            <a href="/bid/{{ a['listing_ID'] }}">Bid</a>
+                        {% elif a['status'] == 2 and a['my_highest_bid'] == a['highest_bid'] %}
+                            <a href="/pay/{{ a['listing_ID'] }}">Pay</a>
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+
+
+        </table>
+    {% else %}
+        <p class="empty">You have not placed any bids yet.</p>
+
+    {% endif %}
+
 </div>
 
 </body>

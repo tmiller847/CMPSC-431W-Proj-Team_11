@@ -3,7 +3,7 @@ from pathlib import Path
 import sqlite3 as sql
 import hashlib
 
-from flask import Flask, render_template, request, session
+from flask import Flask, render_template, request, session, redirect, url_for
 
 app = Flask(__name__)
 app.secret_key = "phase2-demo-key"
@@ -99,17 +99,16 @@ def login():
                         if helpdesk:
                             roles.append("HelpDesk")
 
-
                         if len(roles) == 1:
                             session["role"] = roles[0]
                             session["email"] = email
                             session["roles"] = roles
                             if roles[0] == "Seller":
-                                return render_template("seller_home.html", email=email)
+                                return redirect(url_for("seller_home"))
                             elif roles[0] == "Bidder":
-                                return render_template("bidder_home.html", email=email)
+                                return redirect(url_for("bidder_home"))
                             elif roles[0] == "HelpDesk":
-                                return render_template("helpdesk_home.html", email=email)
+                                return redirect(url_for("helpdesk_home"))
 
                         elif len(roles) > 1:
                             session["email"] = email
@@ -148,7 +147,47 @@ def choose_role():
 
     return render_template("login.html", error="Invalid role selected.")
 
+@app.route('/bidder_home')
+def bidder_home():
+    if "email" not in session or session.get("role") != "Bidder":
+        return render_template("login.html", error="Please log in as a bidder first.")
 
+    email = session["email"]
+    auctions = []
+
+    try:
+        with get_connection() as con:
+            auctions = con.execute("""
+                SELECT al.listing_ID, al.auction_title, al.seller_email,
+                       al.status, al.max_bids,
+                       COUNT(b.bid_ID) AS bid_count,
+                       MAX(b.bid_price) AS highest_bid,
+                       MAX(CASE WHEN LOWER(TRIM(b.bidder_email)) = LOWER(TRIM(?))
+                                THEN b.bid_price END) AS my_highest_bid
+                FROM Auction_Listing al
+                JOIN Bid b ON al.listing_ID = b.listing_ID
+                WHERE LOWER(TRIM(b.bidder_email)) = LOWER(TRIM(?))
+                GROUP BY al.listing_ID
+                ORDER BY al.status ASC, al.listing_ID DESC
+            """, (email, email)).fetchall()
+    except sql.Error as e:
+        print("DB error in bidder_home:", e)
+
+    return render_template("bidder_home.html", email=email, auctions=auctions)
+
+
+@app.route('/seller_home')
+def seller_home():
+    if "email" not in session or session.get("role") != "Seller":
+        return render_template("login.html", error="Please log in as a seller first.")
+    return render_template("seller_home.html", email=session["email"])
+
+
+@app.route('/helpdesk_home')
+def helpdesk_home():
+    if "email" not in session or session.get("role") != "HelpDesk":
+        return render_template("login.html", error="Please log in as HelpDesk first.")
+    return render_template("helpdesk_home.html", email=session["email"])
 @app.route('/search', methods=['GET'])
 def search():
     error = None
@@ -395,6 +434,113 @@ def bid_page(listing_id):
         bid_accepted=bid_accepted,
     )
 
+
+@app.route('/pay/<int:listing_id>', methods=['GET', 'POST'])
+def payment_page(listing_id):
+    if "email" not in session:
+        return render_template("login.html", error="Please log in first.")
+
+    bidder_email = session["email"]
+    error = None
+    success = False
+
+    try:
+        with get_connection() as con:
+            listing = con.execute("""
+                SELECT listing_ID, auction_title, seller_email, max_bids
+                FROM Auction_Listing
+                WHERE listing_ID = ? AND status = 2
+            """, (listing_id,)).fetchone()
+
+            if not listing:
+                return render_template("pay.html", error="Listing not found or not yet sold.", listing=None)
+
+            # confirm that bidder has the highest bid
+            winner_row = con.execute("""
+                SELECT bidder_email, MAX(bid_price) AS winning_price
+                FROM Bid
+                WHERE listing_ID = ?
+            """, (listing_id,)).fetchone()
+
+            if not winner_row or winner_row["bidder_email"].strip().lower() != bidder_email.strip().lower():
+                return render_template("pay.html", error="You are not the winner of this auction.", listing=None)
+            winning_price = winner_row["winning_price"]
+
+            # check if bidder already paid
+            already_paid = con.execute("""
+                SELECT transaction_ID FROM Transact WHERE listing_ID = ?
+            """, (listing_id,)).fetchone()
+
+            if already_paid:
+                return render_template("pay.html", error="Payment already completed for this auction.", listing=None)
+            # load saved cards from credit_card table
+            saved_cards = con.execute("""
+                SELECT credit_card_num, card_type, expire_month, expire_year
+                FROM Credit_Card
+                WHERE LOWER(TRIM(owner_email)) = ?
+            """, (bidder_email.strip().lower(),)).fetchall()
+
+            if request.method == 'POST':
+                use_saved = request.form.get('use_saved', '').strip()
+                new_card_num = request.form.get('new_card_num', '').strip()
+                card_type = request.form.get('card_type', '').strip()
+                expire_month = request.form.get('expire_month', '').strip()
+                expire_year = request.form.get('expire_year', '').strip()
+                security_code = request.form.get('security_code', '').strip()
+
+                chosen_card = None
+
+                if use_saved:
+                    chosen_card = con.execute("""
+                        SELECT credit_card_num FROM Credit_Card
+                        WHERE credit_card_num = ? AND LOWER(TRIM(owner_email)) = ?
+                    """, (use_saved, bidder_email.strip().lower())).fetchone()
+                    if not chosen_card:
+                        error = "Invalid card selection."
+                elif new_card_num:
+                    if not card_type or not expire_month or not expire_year or not security_code:
+                        error = "Please fill in all card fields."
+                    else:
+                        try:
+                            expire_month = int(expire_month)
+                            expire_year = int(expire_year)
+                            security_code = int(security_code)
+                        except ValueError:
+                            error = "Invalid card details."
+
+                        if not error:
+                            con.execute("""
+                                INSERT OR IGNORE INTO Credit_Card
+                                (credit_card_num, card_type, expire_month, expire_year, security_code, owner_email)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                            """, (new_card_num, card_type, expire_month, expire_year, security_code, bidder_email))
+                            con.commit()
+                            chosen_card = {"credit_card_num": new_card_num}
+                else:
+                    error = "Please select or enter a credit card."
+
+                if not error and chosen_card:
+                    from datetime import date
+                    today = date.today().strftime("%m/%d/%y")
+                    con.execute("""
+                        INSERT INTO Transact (seller_email, listing_ID, bidder_email, date, payment)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (listing["seller_email"], listing_id, bidder_email, today, winning_price))
+                    con.commit()
+                    success = True
+
+    except sql.Error as e:
+        print("DB error in payment_page:", e)
+        error = "Database error during payment."
+
+    return render_template(
+        "payment.html",
+        listing=listing if 'listing' in dir() else None,
+        winning_price=winning_price if 'winning_price' in dir() else None,
+        saved_cards=saved_cards if 'saved_cards' in dir() else [],
+        error=error,
+        success=success,
+    )
 @app.route('/logout')
 def logout():
     session.clear()
