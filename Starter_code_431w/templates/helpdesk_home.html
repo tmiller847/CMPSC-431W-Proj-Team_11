@@ -1,11 +1,63 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+
     <title>HelpDesk Dashboard</title>
     <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+        
         body {
             font-family: Arial, sans-serif;
-            background-color: #e9edf2;
+            background-image: 
+                linear-gradient(rgba(4, 30, 66, 0.75), rgba(3, 26, 60, 0.91)),
+                /* url("https://images.ctfassets.net/ni9rh5nu0d99/3CSU4HBvoCFNN0133wktys/8f2b9b45a895c4ed1c67d8674e70865e/shrine16-behrend.jpg?fm=webp&w=3840&q=75"); */
+                url("https://psu-gatsby-files-prod.s3.amazonaws.com/s3fs-public/styles/4_3_1500w/public/NL%20statue%20spring124.jpg?h=046da51e&itok=0t_5yVWj");
+
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+
+
+        .banner {
+            background: 
+                linear-gradient(rgba(4, 33, 73, 0.75), rgba(3, 26, 60, 0.91))
+                #001E44;
+            color: white;
+            padding: 14px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border: 2px solid #001735;
+        }
+
+        .banner-left .brand {
+            color: white;
+            text-decoration: none;
+            font-size: 30px;
+            font-weight: bold;
+            font-family: 'Roboto', sans-serif;
+        }
+
+        .banner-right a {
+            color: white;
+            text-decoration: none;
+            margin-left: 35px;
+            font-size: 22px;
+            font-weight: bold;
+            font-family: 'Roboto', sans-serif;
+        }
+
+        .banner-right a:hover,
+        .banner-left .brand:hover {
+            text-decoration: underline;
         }
 
         .content {
@@ -34,6 +86,7 @@
     </style>
 </head>
 <body>
+{% include "banner.html" %}
 
 <div class="content">
     <h1>HelpDesk Dashboard</h1>

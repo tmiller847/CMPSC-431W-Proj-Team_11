@@ -1,0 +1,31 @@
+<div class="banner">
+    <div class="banner-left">
+        <a href="/" class="brand">NittanyAuction</a>
+    </div>
+
+    <div class="banner-right">
+        {% if session.get("role") == "Bidder" %}
+            <a href="{{ url_for('bidder_home') }}">Dashboard</a>
+        {% elif session.get("role") == "Seller" %}
+            <a href="{{ url_for('seller_home') }}">Dashboard</a>
+        {% elif session.get("role") == "HelpDesk" %}
+            <a href="{{ url_for('helpdesk_home') }}">Dashboard</a>
+        {% endif %}
+
+        {% if session.get("email") %}
+            <a href="{{ url_for('profile') }}">My Profile</a>
+        {% endif %}
+
+        <a href="{{ url_for('search') }}">Search</a>
+
+        {% if session.get("role") == "Bidder" or session.get("role") == "Seller" %}
+            <a href="{{ url_for('help_request') }}">Help</a>
+        {% endif %}
+
+        {% if session.get("role") == "Seller" %}
+            <a href="{{ url_for('seller_products') }}">Seller Products</a>
+        {% endif %}
+
+        <a href="{{ url_for('logout') }}">Log Out</a>
+    </div>
+</div>
