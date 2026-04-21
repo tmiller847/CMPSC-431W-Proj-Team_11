@@ -194,7 +194,9 @@ def initialize_schema_if_needed(connection):
 
 @app.route('/', methods=['GET', 'POST'])
 def login():
+    temp_error = session.pop('login_error', None)
     error = None
+    if error is None: error = temp_error
     if request.method == 'POST':
         email = request.form.get('email', '').strip()
         normalized_email = email.strip().lower()
@@ -274,9 +276,11 @@ def choose_role():
 
 
     if not email or not role:
-        return render_template("login.html", error="Role selection failed.")
+        session['login_error'] = 'Role selection failed.'
+        return redirect(url_for("login"))
     if role not in roles:
-        return render_template("login.html", error="Invalid role selected.")
+        session['login_error'] = 'Invalid role selected.'
+        return redirect(url_for("login"))
     session["role"] = role
     if role == "Seller":
         return render_template("seller_home.html", email=email)
@@ -285,12 +289,14 @@ def choose_role():
     elif role == "HelpDesk":
         return render_template("helpdesk_home.html", email=email)
 
-    return render_template("login.html", error="Invalid role selected.")
+    session['login_error'] = 'Invalid role selected.'
+    return redirect(url_for("login"))
 
 @app.route('/bidder_home')
 def bidder_home():
     if "email" not in session or session.get("role") != "Bidder":
-        return render_template("login.html", error="Please log in as a bidder first.")
+        session['login_error'] = 'You must be logged in to access this feature. Please log in.'
+        return redirect(url_for("login"))
 
     email = session["email"]
     auctions = []
@@ -319,14 +325,16 @@ def bidder_home():
 @app.route('/seller_home')
 def seller_home():
     if "email" not in session or session.get("role") != "Seller":
-        return render_template("login.html", error="Please log in as a seller first.")
+        session['login_error'] = 'You must be a Seller to access this feature. Please log in.'
+        return redirect(url_for("login"))
     return render_template("seller_home.html", email=session["email"])
 
 
 @app.route('/helpdesk_home')
 def helpdesk_home():
     if "email" not in session or session.get("role") != "HelpDesk":
-        return render_template("login.html", error="Please log in as HelpDesk first.")
+        session['login_error'] = 'You must be a Helpdesk Member to access this feature. Please log in.'
+        return redirect(url_for("login"))
     return render_template("helpdesk_home.html", email=session["email"])
 @app.route('/search', methods=['GET'])
 def search():
@@ -385,7 +393,8 @@ def search():
 @app.route('/product/<int:listing_id>')
 def product_page(listing_id):
     if "email" not in session:
-        return render_template("login.html", error="Please log in first.")
+        session['login_error'] = 'Please log in first.'
+        return redirect(url_for("login"))
 
 
     error = None
@@ -442,7 +451,8 @@ def product_page(listing_id):
 @app.route('/bid/<int:listing_id>', methods=['GET', 'POST'])
 def bid_page(listing_id):
     if "email" not in session:
-        return render_template("login.html", error="Please log in first.")
+        session['login_error'] = 'Please log in first.'
+        return redirect(url_for("login"))
 
 
 
@@ -578,7 +588,8 @@ def bid_page(listing_id):
 @app.route('/pay/<int:listing_id>', methods=['GET', 'POST'])
 def payment_page(listing_id):
     if "email" not in session:
-        return render_template("login.html", error="Please log in first.")
+        session['login_error'] = 'Please log in first.'
+        return redirect(url_for("login"))
 
     bidder_email = session["email"]
     error = None
@@ -685,7 +696,8 @@ def payment_page(listing_id):
 @app.route('/logout')
 def logout():
     session.clear()
-    return render_template("login.html", error="Logged out successfully.")
+    session['login_error'] = 'Logged out successfully.'
+    return redirect(url_for("login"))
 
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
@@ -768,7 +780,8 @@ def signup():
 @app.route("/profile", methods=["GET", "POST"])
 def profile():
     if "email" not in session:
-        return render_template("login.html", error="Please log in first.")
+        session['login_error'] = 'Please log in first.'
+        return redirect(url_for("login"))
 
     email = session["email"].strip().lower()
     error = None
@@ -942,7 +955,8 @@ def profile():
 @app.route("/seller_products", methods=["GET", "POST"])
 def seller_products():
     if "email" not in session or session.get("role") != "Seller":
-        return render_template("login.html", error="Please log in as a seller first.")
+        session['login_error'] = 'You must be a Seller to access this feature. Please log in.'
+        return redirect(url_for("login"))
 
     seller_email = session["email"].strip().lower()
     message = None
@@ -1075,7 +1089,8 @@ def seller_products():
 @app.route("/help_request", methods=["GET", "POST"])
 def help_request():
     if "email" not in session:
-        return render_template("login.html", error="Please log in first.")
+        session['login_error'] = 'Please log in first.'
+        return redirect(url_for("login"))
 
     sender_email = session["email"].strip().lower()
     message = None
