@@ -141,10 +141,9 @@
         <label>Category</label>
         <select name="category" required>
             <option value="">Select a category</option>
-            <option value="Books">Books</option>
-            <option value="Electronics">Electronics</option>
-            <option value="Clothing">Clothing</option>
-            <option value="Furniture">Furniture</option>
+            {% for category in categories %}
+                <option value="{{ category }}">{{ category }}</option>
+            {% endfor %}
         </select>
 
         <label>Reserve Price</label>

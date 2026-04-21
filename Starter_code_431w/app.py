@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import sqlite3 as sql
 import hashlib
+from uuid import uuid4
 
 from flask import Flask, render_template, request, session, redirect, url_for
 
@@ -28,6 +29,145 @@ def parse_reserve_price(reserve_price_str):
         return float(reserve_price_str.replace('$', '').strip())
     except (ValueError, AttributeError):
         return 0.0
+
+
+def split_name(full_name):
+    parts = full_name.strip().split()
+    if not parts:
+        return "", ""
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], " ".join(parts[1:])
+
+
+def parse_street(street):
+    street = street.strip()
+    if not street:
+        return None, None
+    parts = street.split(maxsplit=1)
+    if parts[0].isdigit():
+        street_num = int(parts[0])
+        street_name = parts[1] if len(parts) > 1 else ""
+    else:
+        street_num = None
+        street_name = street
+    return street_num, street_name
+
+
+def listing_status_label(status):
+    mapping = {
+        0: "Inactive",
+        1: "Active",
+        2: "Sold",
+        3: "Awaiting Decision",
+    }
+    return mapping.get(status, "Unknown")
+
+
+def request_status_label(status):
+    mapping = {
+        0: "Pending",
+        1: "In Review",
+        2: "Approved",
+        3: "Rejected",
+    }
+    return mapping.get(status, "Unknown")
+
+
+def build_profile_data(connection, email):
+    profile = {
+        "email": email,
+        "name": "",
+        "phone": "",
+        "street": "",
+        "city": "",
+        "state": "",
+        "zipcode": "",
+        "first_name": "",
+        "last_name": "",
+        "age": "",
+        "major": "",
+        "bank_routing_number": "",
+        "bank_account_number": "",
+        "balance": "",
+        "helpdesk_position": "",
+    }
+    roles = []
+
+    bidder = connection.execute(
+        """
+        SELECT email, first_name, last_name, age, major, home_address_id
+        FROM Bidder
+        WHERE LOWER(TRIM(email)) = ?
+        """,
+        (email.strip().lower(),),
+    ).fetchone()
+    if bidder:
+        roles.append("Bidder")
+        profile["first_name"] = bidder["first_name"] or ""
+        profile["last_name"] = bidder["last_name"] or ""
+        profile["name"] = " ".join([profile["first_name"], profile["last_name"]]).strip()
+        profile["age"] = "" if bidder["age"] is None else str(bidder["age"])
+        profile["major"] = bidder["major"] or ""
+
+        if bidder["home_address_id"]:
+            address = connection.execute(
+                """
+                SELECT a.street_num, a.street_name, a.zipcode, z.city, z.state
+                FROM Address a
+                LEFT JOIN Zipcode z ON z.zipcode = a.zipcode
+                WHERE a.address_id = ?
+                """,
+                (bidder["home_address_id"],),
+            ).fetchone()
+            if address:
+                street_num = "" if address["street_num"] is None else str(address["street_num"])
+                street_name = address["street_name"] or ""
+                profile["street"] = " ".join([street_num, street_name]).strip()
+                profile["zipcode"] = "" if address["zipcode"] is None else str(address["zipcode"])
+                profile["city"] = address["city"] or ""
+                profile["state"] = address["state"] or ""
+
+    seller = connection.execute(
+        """
+        SELECT email, bank_routing_number, bank_account_number, balance
+        FROM Seller
+        WHERE LOWER(TRIM(email)) = ?
+        """,
+        (email.strip().lower(),),
+    ).fetchone()
+    if seller:
+        roles.append("Seller")
+        profile["bank_routing_number"] = seller["bank_routing_number"] or ""
+        profile["bank_account_number"] = (
+            "" if seller["bank_account_number"] is None else str(seller["bank_account_number"])
+        )
+        profile["balance"] = "" if seller["balance"] is None else str(seller["balance"])
+
+    helpdesk = connection.execute(
+        """
+        SELECT email, position
+        FROM Helpdesk
+        WHERE LOWER(TRIM(email)) = ?
+        """,
+        (email.strip().lower(),),
+    ).fetchone()
+    if helpdesk:
+        roles.append("HelpDesk")
+        profile["helpdesk_position"] = helpdesk["position"] or ""
+
+    local_vendor = connection.execute(
+        """
+        SELECT customer_service_phone_number
+        FROM Local_Vendor
+        WHERE LOWER(TRIM(email)) = ?
+        """,
+        (email.strip().lower(),),
+    ).fetchone()
+    if local_vendor and local_vendor["customer_service_phone_number"]:
+        profile["phone"] = local_vendor["customer_service_phone_number"]
+
+    return profile, roles
 
 def get_connection():
     connection = sql.connect(DB_PATH)
@@ -549,92 +689,447 @@ def logout():
 
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
+    error = None
+    message = None
+    form_data = {"email": "", "name": "", "phone": "", "role": "Bidder"}
 
-    return render_template("signup.html")
+    if request.method == "POST":
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "").strip()
+        full_name = request.form.get("name", "").strip()
+        phone = request.form.get("phone", "").strip()
+        role = request.form.get("role", "").strip()
+
+        form_data = {"email": email, "name": full_name, "phone": phone, "role": role or "Bidder"}
+
+        if not email or not password or not full_name:
+            error = "Email, password, and name are required."
+        elif role not in {"Bidder", "Seller", "HelpDesk"}:
+            error = "Invalid role selected."
+        else:
+            normalized_email = email.lower()
+            first_name, last_name = split_name(full_name)
+            hashed_pw = hash_password(password)
+            try:
+                with get_connection() as con:
+                    initialize_schema_if_needed(con)
+                    existing_user = con.execute(
+                        "SELECT email FROM User WHERE LOWER(TRIM(email)) = ?",
+                        (normalized_email,),
+                    ).fetchone()
+                    if existing_user:
+                        error = "An account with this email already exists."
+                    else:
+                        con.execute(
+                            "INSERT INTO User (email, password) VALUES (?, ?)",
+                            (normalized_email, hashed_pw),
+                        )
+
+                        if role == "Bidder":
+                            con.execute(
+                                """
+                                INSERT INTO Bidder (email, first_name, last_name, age, home_address_id, major)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                                """,
+                                (normalized_email, first_name, last_name, None, None, None),
+                            )
+                        elif role == "Seller":
+                            con.execute(
+                                """
+                                INSERT INTO Seller (email, bank_routing_number, bank_account_number, balance)
+                                VALUES (?, ?, ?, ?)
+                                """,
+                                (normalized_email, None, None, 0),
+                            )
+                        elif role == "HelpDesk":
+                            con.execute(
+                                "INSERT INTO Helpdesk (email, position) VALUES (?, ?)",
+                                (normalized_email, None),
+                            )
+
+                        if phone and role == "Seller":
+                            con.execute(
+                                """
+                                INSERT OR IGNORE INTO Local_Vendor
+                                (email, business_name, business_address_ID, customer_service_phone_number)
+                                VALUES (?, ?, ?, ?)
+                                """,
+                                (normalized_email, None, None, phone),
+                            )
+                        con.commit()
+                        message = "Account created successfully. Please log in."
+                        form_data = {"email": "", "name": "", "phone": "", "role": "Bidder"}
+            except sql.Error as e:
+                print("DB error in signup:", e)
+                error = "Could not create account due to a database error."
+
+    return render_template("signup.html", error=error, message=message, form_data=form_data)
 
 @app.route("/profile", methods=["GET", "POST"])
 def profile():
-    # test examples
-    user = {
-        "email": "testuser@psu.edu",
-        "name": "John Doe",
-        "phone": "555-123-4567",
-        "street": "123 College Ave",
-        "city": "State College",
-        "state": "PA",
-        "zipcode": "12345"
-    }
+    if "email" not in session:
+        return render_template("login.html", error="Please log in first.")
 
-    if request.method == "POST":
-        user["name"] = request.form["name"]
-        user["phone"] = request.form["phone"]
-        user["street"] = request.form["street"]
-        user["city"] = request.form["city"]
-        user["state"] = request.form["state"]
-        user["zipcode"] = request.form["zipcode"]
+    email = session["email"].strip().lower()
+    error = None
+    message = None
 
-        password = request.form["password"]
+    try:
+        with get_connection() as con:
+            initialize_schema_if_needed(con)
+            profile_data, roles = build_profile_data(con, email)
 
-        return render_template("profile.html", user=user, message="Profile updated successfully.")
+            if request.method == "POST":
+                password = request.form.get("password", "").strip()
 
-    return render_template("profile.html", user=user)
+                if "Bidder" in roles:
+                    first_name, last_name = split_name(request.form.get("name", "").strip())
+                    age_raw = request.form.get("age", "").strip()
+                    major = request.form.get("major", "").strip()
+                    street = request.form.get("street", "").strip()
+                    city = request.form.get("city", "").strip()
+                    state = request.form.get("state", "").strip()
+                    zipcode = request.form.get("zipcode", "").strip()
+
+                    age_value = None
+                    if age_raw:
+                        try:
+                            age_value = int(age_raw)
+                        except ValueError:
+                            error = "Age must be a valid number."
+
+                    home_address_id = con.execute(
+                        """
+                        SELECT home_address_id
+                        FROM Bidder
+                        WHERE LOWER(TRIM(email)) = ?
+                        """,
+                        (email,),
+                    ).fetchone()["home_address_id"]
+
+                    if not error:
+                        con.execute(
+                            """
+                            UPDATE Bidder
+                            SET first_name = ?, last_name = ?, age = ?, major = ?
+                            WHERE LOWER(TRIM(email)) = ?
+                            """,
+                            (first_name, last_name, age_value, major or None, email),
+                        )
+
+                    if not error and (street or city or state or zipcode):
+                        street_num, street_name = parse_street(street)
+                        zip_value = None
+                        if zipcode:
+                            if not zipcode.isdigit():
+                                error = "Zipcode must be numeric."
+                            else:
+                                zip_value = int(zipcode)
+                                con.execute(
+                                    """
+                                    INSERT INTO Zipcode (zipcode, city, state)
+                                    VALUES (?, ?, ?)
+                                    ON CONFLICT(zipcode) DO UPDATE SET city = excluded.city, state = excluded.state
+                                    """,
+                                    (zip_value, city or None, state or None),
+                                )
+
+                        if not error:
+                            if not home_address_id:
+                                home_address_id = f"addr_{uuid4().hex[:10]}"
+                                con.execute(
+                                    """
+                                    INSERT INTO Address (address_id, zipcode, street_num, street_name)
+                                    VALUES (?, ?, ?, ?)
+                                    """,
+                                    (home_address_id, zip_value, street_num, street_name or None),
+                                )
+                                con.execute(
+                                    """
+                                    UPDATE Bidder
+                                    SET home_address_id = ?
+                                    WHERE LOWER(TRIM(email)) = ?
+                                    """,
+                                    (home_address_id, email),
+                                )
+                            else:
+                                con.execute(
+                                    """
+                                    UPDATE Address
+                                    SET zipcode = ?, street_num = ?, street_name = ?
+                                    WHERE address_id = ?
+                                    """,
+                                    (zip_value, street_num, street_name or None, home_address_id),
+                                )
+
+                if not error and "Seller" in roles:
+                    bank_routing = request.form.get("bank_routing_number", "").strip()
+                    bank_account_raw = request.form.get("bank_account_number", "").strip()
+                    balance_raw = request.form.get("balance", "").strip()
+                    phone = request.form.get("phone", "").strip()
+
+                    bank_account = None
+                    if bank_account_raw:
+                        if not bank_account_raw.isdigit():
+                            error = "Bank account number must be numeric."
+                        else:
+                            bank_account = int(bank_account_raw)
+
+                    balance = None
+                    if not error and balance_raw:
+                        try:
+                            balance = int(float(balance_raw))
+                        except ValueError:
+                            error = "Balance must be numeric."
+
+                    if not error:
+                        con.execute(
+                            """
+                            UPDATE Seller
+                            SET bank_routing_number = ?, bank_account_number = ?, balance = ?
+                            WHERE LOWER(TRIM(email)) = ?
+                            """,
+                            (bank_routing or None, bank_account, balance, email),
+                        )
+
+                        if phone:
+                            con.execute(
+                                """
+                                INSERT INTO Local_Vendor
+                                (email, business_name, business_address_ID, customer_service_phone_number)
+                                VALUES (?, ?, ?, ?)
+                                ON CONFLICT(email) DO UPDATE SET
+                                    customer_service_phone_number = excluded.customer_service_phone_number
+                                """,
+                                (email, None, None, phone),
+                            )
+
+                if not error and "HelpDesk" in roles:
+                    position = request.form.get("helpdesk_position", "").strip()
+                    con.execute(
+                        """
+                        UPDATE Helpdesk
+                        SET position = ?
+                        WHERE LOWER(TRIM(email)) = ?
+                        """,
+                        (position or None, email),
+                    )
+
+                if not error and password:
+                    con.execute(
+                        """
+                        UPDATE User
+                        SET password = ?
+                        WHERE LOWER(TRIM(email)) = ?
+                        """,
+                        (hash_password(password), email),
+                    )
+
+                if not error:
+                    con.commit()
+                    message = "Profile updated successfully."
+                else:
+                    con.rollback()
+
+                profile_data, roles = build_profile_data(con, email)
+
+    except sql.Error as e:
+        print("DB error in profile:", e)
+        return render_template("profile.html", user={"email": email}, roles=[], error="Database error.")
+
+    return render_template("profile.html", user=profile_data, roles=roles, message=message, error=error)
 
 @app.route("/seller_products", methods=["GET", "POST"])
 def seller_products():
-    # testing examples
-    products = [
-        {
-            "title": "Calculus Textbook",
-            "category": "Books",
-            "reserve_price": "25.00",
-            "max_bids": 10,
-            "status": "Active"
-        },
-        {
-            "title": "Desk Lamp",
-            "category": "Furniture",
-            "reserve_price": "15.00",
-            "max_bids": 8,
-            "status": "Inactive"
-        }
-    ]
+    if "email" not in session or session.get("role") != "Seller":
+        return render_template("login.html", error="Please log in as a seller first.")
 
-    if request.method == "POST":
-        new_product = {
-            "title": request.form["title"],
-            "category": request.form["category"],
-            "reserve_price": request.form["reserve_price"],
-            "max_bids": request.form["max_bids"],
-            "status": "Active"
-        }
+    seller_email = session["email"].strip().lower()
+    message = None
+    error = None
+    products = []
+    categories = []
 
-        products.append(new_product)
+    try:
+        with get_connection() as con:
+            initialize_schema_if_needed(con)
 
-        return render_template(
-            "seller_products.html",
-            products=products,
-            message="Listing created successfully."
-        )
+            if request.method == "POST":
+                form_type = request.form.get("form_type", "").strip()
 
-    return render_template("seller_products.html", products=products)
+                if form_type == "create":
+                    title = request.form.get("title", "").strip()
+                    description = request.form.get("description", "").strip()
+                    category = request.form.get("category", "").strip()
+                    reserve_price_raw = request.form.get("reserve_price", "").strip()
+                    max_bids_raw = request.form.get("max_bids", "").strip()
+
+                    if not title or not description or not category or not reserve_price_raw or not max_bids_raw:
+                        error = "Please fill in all listing fields."
+                    else:
+                        try:
+                            reserve_price_value = float(reserve_price_raw)
+                            max_bids_value = int(max_bids_raw)
+                        except ValueError:
+                            error = "Reserve price and max bids must be numeric."
+                        else:
+                            if reserve_price_value < 0:
+                                error = "Reserve price must be non-negative."
+                            elif max_bids_value <= 0:
+                                error = "Max bids must be greater than zero."
+                            else:
+                                category_exists = con.execute(
+                                    """
+                                    SELECT category_name
+                                    FROM Category
+                                    WHERE LOWER(TRIM(category_name)) = ?
+                                    """,
+                                    (category.lower(),),
+                                ).fetchone()
+                                if not category_exists:
+                                    error = "Selected category does not exist in the database."
+                                else:
+                                    con.execute(
+                                        """
+                                        INSERT INTO Auction_Listing
+                                        (seller_email, category, auction_title, product_name, product_description,
+                                         quantity, reserve_price, max_bids, status)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        """,
+                                        (
+                                            seller_email,
+                                            category_exists["category_name"],
+                                            title,
+                                            title,
+                                            description,
+                                            1,
+                                            f"${reserve_price_value:.2f}",
+                                            max_bids_value,
+                                            1,
+                                        ),
+                                    )
+                                    con.commit()
+                                    message = "Listing created successfully."
+
+                elif form_type == "delete":
+                    listing_id_raw = request.form.get("product_id", "").strip()
+                    if not listing_id_raw.isdigit():
+                        error = "Invalid listing ID."
+                    else:
+                        listing_id = int(listing_id_raw)
+                        result = con.execute(
+                            """
+                            UPDATE Auction_Listing
+                            SET status = 0
+                            WHERE listing_ID = ? AND LOWER(TRIM(seller_email)) = ?
+                            """,
+                            (listing_id, seller_email),
+                        )
+                        if result.rowcount == 0:
+                            error = "Listing not found or not owned by you."
+                        else:
+                            con.commit()
+                            message = "Listing marked as inactive."
+                else:
+                    error = "Invalid form action."
+
+            category_rows = con.execute(
+                "SELECT category_name FROM Category ORDER BY category_name ASC"
+            ).fetchall()
+            categories = [row["category_name"] for row in category_rows]
+
+            rows = con.execute(
+                """
+                SELECT listing_ID, auction_title, category, reserve_price, max_bids, status
+                FROM Auction_Listing
+                WHERE LOWER(TRIM(seller_email)) = ?
+                ORDER BY listing_ID DESC
+                """,
+                (seller_email,),
+            ).fetchall()
+
+            products = [
+                {
+                    "id": row["listing_ID"],
+                    "title": row["auction_title"],
+                    "category": row["category"],
+                    "reserve_price": f"{parse_reserve_price(row['reserve_price']):.2f}",
+                    "max_bids": row["max_bids"],
+                    "status": listing_status_label(row["status"]),
+                }
+                for row in rows
+            ]
+
+    except sql.Error as e:
+        print("DB error in seller_products:", e)
+        error = "Database error while managing listings."
+
+    return render_template(
+        "seller_products.html",
+        products=products,
+        categories=categories,
+        message=message,
+        error=error,
+    )
 
 @app.route("/help_request", methods=["GET", "POST"])
 def help_request():
-    # test examples
-    if request.method == "POST":
-        request_type = request.form["request_type"]
-        description = request.form["description"]
+    if "email" not in session:
+        return render_template("login.html", error="Please log in first.")
 
-        print("Help Request Submitted")
-        print("Type:", request_type)
-        print("Description:", description)
+    sender_email = session["email"].strip().lower()
+    message = None
+    error = None
+    requests_list = []
 
-        return render_template(
-            "help_request.html",
-            message="Your request was sent successfully."
-        )
+    try:
+        with get_connection() as con:
+            initialize_schema_if_needed(con)
 
-    return render_template("help_request.html")
+            if request.method == "POST":
+                request_type = request.form.get("request_type", "").strip()
+                description = request.form.get("description", "").strip()
+
+                if not request_type or not description:
+                    error = "Please provide both request type and description."
+                else:
+                    con.execute(
+                        """
+                        INSERT INTO Request
+                        (sender_email, helpdesk_staff_email, request_type, request_desc, request_status)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (sender_email, None, request_type, description, 0),
+                    )
+                    con.commit()
+                    message = "Your request was sent successfully."
+
+            request_rows = con.execute(
+                """
+                SELECT request_id, request_type, request_desc, request_status
+                FROM Request
+                WHERE LOWER(TRIM(sender_email)) = ?
+                ORDER BY request_id DESC
+                LIMIT 10
+                """,
+                (sender_email,),
+            ).fetchall()
+
+            requests_list = [
+                {
+                    "request_id": row["request_id"],
+                    "request_type": row["request_type"],
+                    "request_desc": row["request_desc"],
+                    "request_status": request_status_label(row["request_status"]),
+                }
+                for row in request_rows
+            ]
+
+    except sql.Error as e:
+        print("DB error in help_request:", e)
+        error = "Database error while submitting request."
+
+    return render_template("help_request.html", message=message, error=error, requests=requests_list)
 
 if __name__ == "__main__":
     app.run()
