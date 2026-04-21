@@ -255,7 +255,7 @@ def login():
                         elif len(roles) > 1:
                             session["email"] = email
                             session["roles"] = roles
-                            return render_template("select_role.html", email=email, roles=roles)
+                            return redirect(url_for("choose_role_page"))
 
                         else:
                             error = "User authenticated, but role was not found."
@@ -291,6 +291,14 @@ def choose_role():
 
     session['login_error'] = 'Invalid role selected.'
     return redirect(url_for("login"))
+
+@app.route('/choose_role', methods=['GET'])
+def choose_role_page():
+    if "email" not in session:
+        return redirect(url_for("login"))
+
+    roles = session.get("roles", [])
+    return render_template("select_role.html", roles=roles)
 
 @app.route('/bidder_home')
 def bidder_home():

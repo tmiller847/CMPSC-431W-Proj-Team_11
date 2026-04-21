@@ -26,6 +26,10 @@
             <a href="{{ url_for('seller_products') }}">Seller Products</a>
         {% endif %}
 
-        <a href="{{ url_for('logout') }}">Log Out</a>
+        {% if session.get("email") %}
+            <a href="{{ url_for('logout') }}">Log Out</a>
+        {% else %}
+            <a href="{{ url_for('login') }}">Log In</a>
+        {% endif %}
     </div>
 </div>

@@ -104,6 +104,20 @@
             background: #1f5692;
         }
 
+        .role-button {
+            display: inline-block;
+            padding: 8px 16px;
+            background: #1b497e;
+            color: white;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .role-button:hover {
+            background: #133457;
+        }
+
         .message {
             font-size: 13px;
             margin-bottom: 10px;
@@ -173,6 +187,10 @@
 
         <label>New Password</label>
         <input type="password" name="password" placeholder="Create a new password here">
+
+        <div style="text-align:center; margin-top:15px;">
+            <a href="{{ url_for('choose_role_page') }}" class="role-button">Change Role</a>
+        </div>
 
         <button type="submit">Save Changes</button>
     </form>
