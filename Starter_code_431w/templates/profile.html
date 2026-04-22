@@ -8,9 +8,9 @@
     <title>NittanyAuction Profile</title>
     <style>
         html, body {
-            height: 100%;
+            min-height: 100%;
             margin: 0;
-            overflow: hidden;
+            overflow-y: auto;
         }
         
         body {
@@ -102,6 +102,14 @@
 
         button:hover {
             background: #1f5692;
+        }
+
+        .danger-btn {
+            background: #b03a3a;
+        }
+
+        .danger-btn:hover {
+            background: #8f2f2f;
         }
 
         .role-button {
@@ -197,6 +205,12 @@
         </div>
 
         <button type="submit">Save Changes</button>
+    </form>
+
+    <form method="POST" action="{{ url_for('profile') }}"
+          onsubmit="return confirm('Inactivating your account will sign you out. Continue?');">
+        <input type="hidden" name="action" value="inactivate_account">
+        <button class="danger-btn" type="submit">Inactivate Account</button>
     </form>
 
 </div>
