@@ -428,6 +428,59 @@ def notify_bidders_auction_end(connection, listing_id, seller_email, winner_emai
         )
 
 
+def notify_bidders_seller_decision(
+    connection,
+    listing_id,
+    seller_email,
+    winner_email,
+    highest_bid,
+    accepted,
+):
+    bidder_rows = connection.execute(
+        """
+        SELECT DISTINCT bidder_email
+        FROM Bid
+        WHERE listing_ID = ?
+        """,
+        (listing_id,),
+    ).fetchall()
+
+    for bidder_row in bidder_rows:
+        bidder_email = bidder_row["bidder_email"]
+        bidder_is_winner = bool(
+            accepted
+            and winner_email
+            and bidder_email.strip().lower() == winner_email.strip().lower()
+        )
+        if accepted:
+            message = (
+                f"Seller accepted a final offer for auction #{listing_id}. "
+                f"Final price: ${float(highest_bid):.2f}. "
+                + (
+                    "You won this auction. You may now complete payment."
+                    if bidder_is_winner
+                    else f"Winner: {winner_email}."
+                )
+            )
+        else:
+            message = (
+                f"Seller declined all bids for auction #{listing_id}. "
+                "This auction ended without a sale."
+            )
+
+        create_bidder_notification(
+            connection=connection,
+            listing_id=listing_id,
+            bidder_email=bidder_email,
+            seller_email=seller_email,
+            winner_email=winner_email if accepted else None,
+            highest_bid=highest_bid,
+            can_pay=1 if bidder_is_winner else 0,
+            notification_type="seller_decision",
+            message=message,
+        )
+
+
 def close_expired_auctions(connection):
     now_ts = current_db_timestamp()
     expired_rows = connection.execute(
@@ -704,12 +757,116 @@ def bidder_home():
     )
 
 
-@app.route('/seller_home')
+@app.route('/seller_home', methods=['GET', 'POST'])
 def seller_home():
     if "email" not in session or session.get("role") != "Seller":
         session['login_error'] = 'You must be a Seller to access this feature. Please log in.'
         return redirect(url_for("login"))
-    return render_template("seller_home.html", email=session["email"])
+
+    seller_email = session["email"]
+    message = None
+    error = None
+    seller_updates = []
+
+    try:
+        with get_connection() as con:
+            initialize_schema_if_needed(con)
+
+            if request.method == "POST":
+                action = request.form.get("action", "").strip().lower()
+                listing_id_raw = request.form.get("listing_id", "").strip()
+                if not listing_id_raw.isdigit():
+                    error = "Invalid listing ID."
+                else:
+                    listing_id = int(listing_id_raw)
+                    listing = con.execute(
+                        """
+                        SELECT listing_ID, seller_email, status
+                        FROM Auction_Listing
+                        WHERE listing_ID = ?
+                          AND LOWER(TRIM(seller_email)) = LOWER(TRIM(?))
+                        """,
+                        (listing_id, seller_email),
+                    ).fetchone()
+                    if not listing:
+                        error = "Listing not found or not owned by you."
+                    elif listing["status"] != 3:
+                        error = "This listing is not awaiting a decision."
+                    else:
+                        top_bid = con.execute(
+                            """
+                            SELECT bidder_email, bid_price
+                            FROM Bid
+                            WHERE listing_ID = ?
+                            ORDER BY bid_price DESC, bid_ID ASC
+                            LIMIT 1
+                            """,
+                            (listing_id,),
+                        ).fetchone()
+                        winner_email = top_bid["bidder_email"] if top_bid else None
+                        highest_bid = top_bid["bid_price"] if top_bid else None
+
+                        if action == "accept":
+                            if not winner_email:
+                                error = "No bids are available to accept."
+                            else:
+                                con.execute(
+                                    "UPDATE Auction_Listing SET status = 2 WHERE listing_ID = ?",
+                                    (listing_id,),
+                                )
+                                notify_bidders_seller_decision(
+                                    con,
+                                    listing_id,
+                                    seller_email,
+                                    winner_email,
+                                    highest_bid,
+                                    accepted=True,
+                                )
+                                con.commit()
+                                message = "Offer accepted. Winner has been notified to complete payment."
+                        elif action == "reject":
+                            con.execute(
+                                "UPDATE Auction_Listing SET status = 0 WHERE listing_ID = ?",
+                                (listing_id,),
+                            )
+                            notify_bidders_seller_decision(
+                                con,
+                                listing_id,
+                                seller_email,
+                                winner_email,
+                                highest_bid,
+                                accepted=False,
+                            )
+                            con.commit()
+                            message = "Offer rejected. Bidders have been notified."
+                        else:
+                            error = "Invalid seller action."
+
+            seller_updates = con.execute(
+                """
+                SELECT al.listing_ID, al.auction_title, al.status, al.end_time,
+                       MAX(b.bid_price) AS highest_bid
+                FROM Auction_Listing al
+                LEFT JOIN Bid b ON b.listing_ID = al.listing_ID
+                WHERE LOWER(TRIM(al.seller_email)) = LOWER(TRIM(?))
+                  AND al.status IN (2, 3)
+                GROUP BY al.listing_ID
+                ORDER BY al.status DESC, al.listing_ID DESC
+                """,
+                (seller_email,),
+            ).fetchall()
+
+    except sql.Error as e:
+        print("DB error in seller_home:", e)
+        error = "Database error while loading seller updates."
+
+    return render_template(
+        "seller_home.html",
+        email=seller_email,
+        updates=seller_updates,
+        message=message,
+        error=error,
+    )
 
 
 @app.route('/helpdesk_home')
