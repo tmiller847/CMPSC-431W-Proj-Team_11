@@ -86,6 +86,13 @@ CREATE TABLE Helpdesk_Approval_Request(request_id INTEGER PRIMARY KEY AUTOINCREM
 				       requested_at TEXT NOT NULL,
 				       decided_at TEXT);
 
+CREATE TABLE Listing_Removal(listing_ID INTEGER NOT NULL,
+			     seller_email TEXT NOT NULL,
+			     removed_at TEXT NOT NULL,
+			     remaining_bids INTEGER NOT NULL,
+			     reason TEXT NOT NULL,
+			     FOREIGN KEY(listing_ID) REFERENCES Auction_Listing(listing_ID));
+
 CREATE TABLE Local_Vendor(email	TEXT PRIMARY KEY,
                           business_name TEXT,
                           business_address_ID TEXT,
