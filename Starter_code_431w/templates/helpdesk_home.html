@@ -217,20 +217,22 @@
         <p class="note">No new help request alerts since your last dashboard refresh.</p>
     {% endif %}
 
-    <h2>Unassigned Add Category Requests</h2>
-    {% if unassigned_category_requests %}
+    <h2>Unassigned Help Requests</h2>
+    {% if unassigned_help_requests %}
         <table>
             <tr>
                 <th>Request ID</th>
                 <th>Sender</th>
+                <th>Type</th>
                 <th>Description</th>
                 <th>Status</th>
                 <th>Action</th>
             </tr>
-            {% for req in unassigned_category_requests %}
+            {% for req in unassigned_help_requests %}
                 <tr>
                     <td>#{{ req['request_id'] }}</td>
                     <td>{{ req['sender_email'] }}</td>
+                    <td>{{ req['request_type'] }}</td>
                     <td>{{ req['request_desc'] }}</td>
                     <td>{{ request_status_label(req['request_status']) }}</td>
                     <td>
@@ -244,51 +246,68 @@
             {% endfor %}
         </table>
     {% else %}
-        <p class="note">No unassigned Add Category requests in the team queue.</p>
+        <p class="note">No unassigned help requests in the team queue.</p>
     {% endif %}
 
-    <h2>My Assigned Add Category Requests</h2>
-    {% if my_category_requests %}
+    <h2>My Assigned Help Requests</h2>
+    {% if my_help_requests %}
         <table>
             <tr>
                 <th>Request ID</th>
                 <th>Sender</th>
+                <th>Type</th>
                 <th>Description</th>
                 <th>Status</th>
                 <th>Action</th>
             </tr>
-            {% for req in my_category_requests %}
+            {% for req in my_help_requests %}
                 <tr>
                     <td>#{{ req['request_id'] }}</td>
                     <td>{{ req['sender_email'] }}</td>
+                    <td>{{ req['request_type'] }}</td>
                     <td>{{ req['request_desc'] }}</td>
                     <td>{{ request_status_label(req['request_status']) }}</td>
                     <td>
-                        <a class="action-link" href="{{ url_for('manage_add_category_request', request_id=req['request_id']) }}">
-                            Open Request
-                        </a>
+                        {% if req['request_type'] and req['request_type']|trim|lower == 'add category' %}
+                            <a class="action-link" href="{{ url_for('manage_add_category_request', request_id=req['request_id']) }}">
+                                Open Request
+                            </a>
+                        {% else %}
+                            <form class="action-form" method="POST" action="{{ url_for('helpdesk_home') }}">
+                                <input type="hidden" name="request_id" value="{{ req['request_id'] }}">
+                                <input type="hidden" name="action" value="complete_request">
+                                <button type="submit">Complete</button>
+                            </form>
+                            <form class="action-form" method="POST" action="{{ url_for('helpdesk_home') }}">
+                                <input type="hidden" name="request_id" value="{{ req['request_id'] }}">
+                                <input type="hidden" name="action" value="reject_request">
+                                <button class="deny-btn" type="submit">Reject</button>
+                            </form>
+                        {% endif %}
                     </td>
                 </tr>
             {% endfor %}
         </table>
     {% else %}
-        <p class="note">You currently do not have any assigned Add Category requests.</p>
+        <p class="note">You currently do not have any assigned help requests.</p>
     {% endif %}
 
-    <h2>Recently Completed Add Category Requests</h2>
-    {% if recently_completed_category_requests %}
+    <h2>Recently Processed Help Requests</h2>
+    {% if recently_processed_help_requests %}
         <table>
             <tr>
                 <th>Request ID</th>
                 <th>Sender</th>
+                <th>Type</th>
                 <th>Description</th>
                 <th>Status</th>
                 <th>Handled By</th>
             </tr>
-            {% for req in recently_completed_category_requests %}
+            {% for req in recently_processed_help_requests %}
                 <tr>
                     <td>#{{ req['request_id'] }}</td>
                     <td>{{ req['sender_email'] }}</td>
+                    <td>{{ req['request_type'] }}</td>
                     <td>{{ req['request_desc'] }}</td>
                     <td>{{ request_status_label(req['request_status']) }}</td>
                     <td>{{ req['helpdesk_staff_email'] or "N/A" }}</td>
@@ -296,7 +315,7 @@
             {% endfor %}
         </table>
     {% else %}
-        <p class="note">No completed Add Category requests yet.</p>
+        <p class="note">No processed help requests yet.</p>
     {% endif %}
 
     <h2>Pending HelpDesk Approvals</h2>

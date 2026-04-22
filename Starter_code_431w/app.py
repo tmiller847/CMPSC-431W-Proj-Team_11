@@ -1018,9 +1018,9 @@ def helpdesk_home():
     pending_requests = []
     request_history = []
     unread_notifications = []
-    unassigned_category_requests = []
-    my_category_requests = []
-    recently_completed_category_requests = []
+    unassigned_help_requests = []
+    my_help_requests = []
+    recently_processed_help_requests = []
 
     try:
         with get_connection() as con:
@@ -1092,8 +1092,6 @@ def helpdesk_home():
                         ).fetchone()
                         if not user_request:
                             error = "Help request not found."
-                        elif (user_request["request_type"] or "").strip().lower() != "add category":
-                            error = "Only Add Category requests can be managed from this dashboard."
                         else:
                             assigned_to = normalized_email(user_request["helpdesk_staff_email"])
                             if assigned_to not in {"", normalized_email(HELPDESK_QUEUE_EMAIL)}:
@@ -1108,7 +1106,42 @@ def helpdesk_home():
                                     (helpdesk_email, request_id),
                                 )
                                 con.commit()
-                                message = f"You claimed Add Category request #{request_id}."
+                                message = f"You claimed help request #{request_id}."
+                elif action in {"complete_request", "reject_request"}:
+                    request_id_raw = request.form.get("request_id", "").strip()
+                    if not request_id_raw.isdigit():
+                        error = "Invalid help request ID."
+                    else:
+                        request_id = int(request_id_raw)
+                        user_request = con.execute(
+                            """
+                            SELECT request_id, request_status, helpdesk_staff_email, request_type
+                            FROM Request
+                            WHERE request_id = ?
+                            """,
+                            (request_id,),
+                        ).fetchone()
+                        if not user_request:
+                            error = "Help request not found."
+                        elif normalized_email(user_request["helpdesk_staff_email"]) != normalized_email(helpdesk_email):
+                            error = "You can only manage requests assigned to your account."
+                        elif (user_request["request_type"] or "").strip().lower() == "add category":
+                            error = "Use Open Request for Add Category requests."
+                        else:
+                            new_status = 2 if action == "complete_request" else 3
+                            con.execute(
+                                """
+                                UPDATE Request
+                                SET request_status = ?
+                                WHERE request_id = ?
+                                """,
+                                (new_status, request_id),
+                            )
+                            con.commit()
+                            if new_status == 2:
+                                message = f"Help request #{request_id} marked as completed."
+                            else:
+                                message = f"Help request #{request_id} marked as rejected."
                 else:
                     error = "Invalid action."
 
@@ -1161,12 +1194,11 @@ def helpdesk_home():
                 """,
             ).fetchall()
 
-            unassigned_category_requests = con.execute(
+            unassigned_help_requests = con.execute(
                 """
                 SELECT request_id, sender_email, request_type, request_desc, request_status, helpdesk_staff_email
                 FROM Request
-                WHERE LOWER(TRIM(request_type)) = 'add category'
-                  AND request_status = 0
+                WHERE request_status = 0
                   AND (
                       helpdesk_staff_email IS NULL
                       OR TRIM(helpdesk_staff_email) = ''
@@ -1178,12 +1210,11 @@ def helpdesk_home():
                 (HELPDESK_QUEUE_EMAIL,),
             ).fetchall()
 
-            my_category_requests = con.execute(
+            my_help_requests = con.execute(
                 """
                 SELECT request_id, sender_email, request_type, request_desc, request_status, helpdesk_staff_email
                 FROM Request
-                WHERE LOWER(TRIM(request_type)) = 'add category'
-                  AND request_status = 1
+                WHERE request_status = 1
                   AND LOWER(TRIM(helpdesk_staff_email)) = LOWER(TRIM(?))
                 ORDER BY request_id DESC
                 LIMIT 20
@@ -1191,12 +1222,11 @@ def helpdesk_home():
                 (helpdesk_email,),
             ).fetchall()
 
-            recently_completed_category_requests = con.execute(
+            recently_processed_help_requests = con.execute(
                 """
                 SELECT request_id, sender_email, request_type, request_desc, request_status, helpdesk_staff_email
                 FROM Request
-                WHERE LOWER(TRIM(request_type)) = 'add category'
-                  AND request_status IN (2, 3)
+                WHERE request_status IN (2, 3)
                 ORDER BY request_id DESC
                 LIMIT 20
                 """
@@ -1210,9 +1240,9 @@ def helpdesk_home():
         "helpdesk_home.html",
         email=helpdesk_email,
         unread_notifications=unread_notifications,
-        unassigned_category_requests=unassigned_category_requests,
-        my_category_requests=my_category_requests,
-        recently_completed_category_requests=recently_completed_category_requests,
+        unassigned_help_requests=unassigned_help_requests,
+        my_help_requests=my_help_requests,
+        recently_processed_help_requests=recently_processed_help_requests,
         request_status_label=request_status_label,
         pending_requests=pending_requests,
         request_history=request_history,
