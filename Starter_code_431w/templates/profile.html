@@ -60,10 +60,10 @@
 
         .profile-box {
             width: 360px;
-            margin: 50px auto;
-            background: #fff;
-            padding: 20px;
-            border: 1px solid #ccc;
+            margin: 120px auto;
+            background: #eff3fa;
+            padding: 30px;
+            border: 1px solid #031631;
             border-radius: 10px;
         }
 
@@ -112,6 +112,8 @@
             border-radius: 8px;
             text-decoration: none;
             font-size: 14px;
+            margin-top: 0px;
+            margin-bottom: 10px;
         }
 
         .role-button:hover {
@@ -170,8 +172,10 @@
         <label>Full Name</label>
         <input type="text" name="name" value="{{ user.name }}">
 
-        <label>Phone Number</label>
-        <input type="text" name="phone" value="{{ user.phone }}">
+        {% if user.phone %}
+            <label>Phone Number</label>
+            <input type="text" name="phone" value="{{ user.phone }}">
+        {% endif %}
 
         <label>Street</label>
         <input type="text" name="street" value="{{ user.street }}">

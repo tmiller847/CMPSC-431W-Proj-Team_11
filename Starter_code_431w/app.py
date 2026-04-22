@@ -453,12 +453,12 @@ def search(category=None):
                 params.extend([like, like, like, like])
 
             if min_price:
-                query += " AND CAST(REPLACE(REPLACE(al.reserve_price, '$', ''), ' ', '') AS REAL) >= ?"
-                params.append(float(min_price))
+                query += " AND CAST(REPLACE(REPLACE(REPLACE(al.reserve_price, '$', ''), ',', ''), ' ', '') AS REAL) >= ?"
+                params.append(float(str(min_price).replace('$', '').replace(',', '').strip()))
 
             if max_price:
-                query += " AND CAST(REPLACE(REPLACE(al.reserve_price, '$', ''), ' ', '') AS REAL) <= ?"
-                params.append(float(max_price))
+                query += " AND CAST(REPLACE(REPLACE(REPLACE(al.reserve_price, '$', ''), ',', ''), ' ', '') AS REAL) <= ?"
+                params.append(float(str(max_price).replace('$', '').replace(',', '').strip()))
 
             query += " GROUP BY al.listing_ID ORDER BY al.listing_ID DESC"
             products = con.execute(query, params).fetchall()

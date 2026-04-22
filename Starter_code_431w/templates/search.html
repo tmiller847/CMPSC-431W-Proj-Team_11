@@ -119,8 +119,6 @@
 
         .search-form button:hover { background: #1f5692; }
 
-
-
         .breadcrumb {
             font-size: 14px;
             margin: 20px 0 10px 0;
@@ -132,7 +130,6 @@
         .breadcrumb a { color: #2a6ebb; text-decoration: none; }
         .breadcrumb a:hover { text-decoration: underline; }
         .breadcrumb span { font-weight: bold; color: #222; }
-
 
         h2 {
             font-size: 18px;
@@ -281,7 +278,11 @@
                     <h3><a href="/product/{{ p['listing_ID'] }}">{{ p['auction_title'] }}</a></h3>
                     <p><strong>Category:</strong> {{ p['category'] }}</p>
                     <p><strong>Seller:</strong> {{ p['seller_email'] }}</p>
-                    <p><strong>Highest Bid:</strong> {% if p['highest_bid'] %}${{ p['highest_bid'] }}{% else %}No bids yet{% endif %}</p>
+                    {% if p['highest_bid'] %}
+                        <p><strong>Highest Bid:</strong> ${{ p['highest_bid'] }}</p>
+                    {% else %}
+                        <p><strong>Reserve Price:</strong> {{ p['reserve_price'] }}</p>
+                    {% endif %}
                     <p><strong>Bids:</strong> {{ p['bid_count'] }} / {{ p['max_bids'] }}</p>
                     <p>{{ p['product_name'] }}</p>
                 </div>
