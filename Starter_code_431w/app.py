@@ -376,12 +376,14 @@ def search():
                 params.extend([like_keyword, like_keyword, like_keyword, like_keyword])
 
             if min_price:
-                query += " AND CAST(SUBSTR(Reserve_Price, 2) AS REAL) >= ?"
-                params.append(min_price)
+                clean_min = min_price.replace("$", "").replace(",", "").strip()
+                query += " AND CAST(REPLACE(SUBSTR(Reserve_Price, 2), ',', '') AS REAL) >= ?"
+                params.append(clean_min)
 
             if max_price:
-                query += " AND CAST(SUBSTR(Reserve_Price, 2) AS REAL) <= ?"
-                params.append(max_price)
+                clean_max = max_price.replace("$", "").replace(",", "").strip()
+                query += " AND CAST(REPLACE(SUBSTR(Reserve_Price, 2), ',', '') AS REAL) <= ?"
+                params.append(clean_max)
 
             results = connection.execute(query, params).fetchall()
 

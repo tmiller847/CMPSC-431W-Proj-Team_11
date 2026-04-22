@@ -13,6 +13,26 @@
             overflow: hidden;
         }
         
+        body {
+            font-family: Arial, sans-serif;
+            background-image: 
+                linear-gradient(rgba(4, 30, 66, 0.75), rgba(3, 26, 60, 0.91)),
+                url("https://psu-gatsby-files-prod.s3.amazonaws.com/s3fs-public/styles/4_3_1500w/public/NL%20statue%20spring124.jpg?h=046da51e&itok=0t_5yVWj");
+
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+
+        h1 {
+            margin-top: 0;
+            font-size: 32px;
+            text-align: center;
+            font-weight: bold;
+            font-family: 'Roboto', sans-serif;
+            margin-bottom: 30px;
+        }
+        
         .banner {
             background: 
                 linear-gradient(rgba(4, 33, 73, 0.75), rgba(3, 26, 60, 0.91))
@@ -46,11 +66,43 @@
         .banner-left .brand:hover {
             text-decoration: underline;
         }
+
+        label {
+            display: block;
+            margin-top: 10px;
+            font-size: 16px;
+        }
+
+        h2 {
+            display: block;
+            margin-top: 30px;
+            font-size: 20px;
+            margin-bottom: 0px
+        }
+
+        .search-box {
+            width: 850px;
+            margin: 120px auto;
+            background: #eff3fa;
+            padding: 30px;
+            border: 1px solid #031631;
+            border-radius: 10px;
+        }
+
+        .results-container {
+            max-height: 600px;
+            overflow-y: auto;
+            margin-top: 20px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            padding: 0;
+        }
     </style>
 </head>
 <body>
 {% include "banner.html" %}
 
+<div class="search-box">
     <h1>Product Search</h1>
     <a href="/bidder_home">Go back to dashboard</a>
 
@@ -71,26 +123,29 @@
         <p>error</p>
     {% endif %}
 
-    <hr>
-
-    {% for product in results %}
-        <div>
-            <h3>
-                <a href="/product/{{ product['Listing_ID'] }}">
-                    {{ product['Auction_Title'] }}
-                </a>
-            </h3>
-            <p>Product: {{ product['Product_Name'] }}</p>
-            <p>Category: {{ product['Category'] }}</p>
-            <p>Seller: {{ product['Seller_Email'] }}</p>
-            <p>Reserve Price: {{ product['Reserve_Price'] }}</p>
-            <p>{{ product['Product_Description'] }}</p>
-        </div>
+    {% if results %}
+        <div class="results-container">
         <hr>
-    {% endfor %}
 
-    {% if not results %}
-        <p>No matching products found.</p>
+        {% for product in results %}
+            <div>
+                <h3>
+                    <a href="/product/{{ product['Listing_ID'] }}">
+                        {{ product['Auction_Title'] }}
+                    </a>
+                </h3>
+                <p>Product: {{ product['Product_Name'] }}</p>
+                <p>Category: {{ product['Category'] }}</p>
+                <p>Seller: {{ product['Seller_Email'] }}</p>
+                <p>Reserve Price: {{ product['Reserve_Price'] }}</p>
+                <p>{{ product['Product_Description'] }}</p>
+            </div>
+            <hr>
+        {% endfor %}
+        </div>    
+    {% else %}
+        <h2>No matching products found.</h2>
     {% endif %}
+</div>
 </body>
 </html>
