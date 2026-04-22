@@ -11,6 +11,7 @@ app = Flask(__name__)
 app.secret_key = "phase2-demo-key"
 
 host = 'http://127.0.0.1:5000/'
+HELPDESK_QUEUE_EMAIL = "helpdeskteam@lsu.edu"
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 DEFAULT_DATASET_DB_PATH = (
@@ -67,9 +68,9 @@ def listing_status_label(status):
 
 def request_status_label(status):
     mapping = {
-        0: "Pending",
-        1: "In Review",
-        2: "Approved",
+        0: "Unassigned",
+        1: "In Progress",
+        2: "Completed",
         3: "Rejected",
     }
     return mapping.get(status, "Unknown")
@@ -997,11 +998,14 @@ def helpdesk_home():
         return redirect(url_for("login"))
 
     helpdesk_email = session["email"]
-    error = None
-    message = None
+    error = session.pop("helpdesk_error", None)
+    message = session.pop("helpdesk_message", None)
     pending_requests = []
     request_history = []
     unread_notifications = []
+    unassigned_category_requests = []
+    my_category_requests = []
+    recently_completed_category_requests = []
 
     try:
         with get_connection() as con:
@@ -1011,53 +1015,87 @@ def helpdesk_home():
 
             if request.method == "POST":
                 action = request.form.get("action", "").strip().lower()
-                applicant_email = request.form.get("applicant_email", "").strip().lower()
-                if not applicant_email:
-                    error = "Invalid applicant email."
-                else:
-                    request_row = con.execute(
-                        """
-                        SELECT request_id, applicant_email, request_status
-                        FROM Helpdesk_Approval_Request
-                        WHERE LOWER(TRIM(applicant_email)) = LOWER(TRIM(?))
-                        """,
-                        (applicant_email,),
-                    ).fetchone()
-                    if not request_row:
-                        error = "Request not found."
-                    elif request_row["request_status"] != 0:
-                        error = "This request has already been decided."
-                    elif action not in {"approve", "deny"}:
-                        error = "Invalid action."
-                    elif action == "approve":
-                        con.execute(
-                            """
-                            INSERT OR IGNORE INTO Helpdesk (email, position)
-                            VALUES (?, ?)
-                            """,
-                            (applicant_email, None),
-                        )
-                        con.execute(
-                            """
-                            UPDATE Helpdesk_Approval_Request
-                            SET request_status = 1, approver_email = ?, decided_at = ?
-                            WHERE request_id = ?
-                            """,
-                            (helpdesk_email, current_db_timestamp(), request_row["request_id"]),
-                        )
-                        con.commit()
-                        message = f"Approved helpdesk request for {applicant_email}."
+                if action in {"approve", "deny"}:
+                    applicant_email = request.form.get("applicant_email", "").strip().lower()
+                    if not applicant_email:
+                        error = "Invalid applicant email."
                     else:
-                        con.execute(
+                        request_row = con.execute(
                             """
-                            UPDATE Helpdesk_Approval_Request
-                            SET request_status = 2, approver_email = ?, decided_at = ?
+                            SELECT request_id, applicant_email, request_status
+                            FROM Helpdesk_Approval_Request
+                            WHERE LOWER(TRIM(applicant_email)) = LOWER(TRIM(?))
+                            """,
+                            (applicant_email,),
+                        ).fetchone()
+                        if not request_row:
+                            error = "Request not found."
+                        elif request_row["request_status"] != 0:
+                            error = "This request has already been decided."
+                        elif action == "approve":
+                            con.execute(
+                                """
+                                INSERT OR IGNORE INTO Helpdesk (email, position)
+                                VALUES (?, ?)
+                                """,
+                                (applicant_email, None),
+                            )
+                            con.execute(
+                                """
+                                UPDATE Helpdesk_Approval_Request
+                                SET request_status = 1, approver_email = ?, decided_at = ?
+                                WHERE request_id = ?
+                                """,
+                                (helpdesk_email, current_db_timestamp(), request_row["request_id"]),
+                            )
+                            con.commit()
+                            message = f"Approved helpdesk request for {applicant_email}."
+                        else:
+                            con.execute(
+                                """
+                                UPDATE Helpdesk_Approval_Request
+                                SET request_status = 2, approver_email = ?, decided_at = ?
+                                WHERE request_id = ?
+                                """,
+                                (helpdesk_email, current_db_timestamp(), request_row["request_id"]),
+                            )
+                            con.commit()
+                            message = f"Denied helpdesk request for {applicant_email}."
+                elif action == "claim_request":
+                    request_id_raw = request.form.get("request_id", "").strip()
+                    if not request_id_raw.isdigit():
+                        error = "Invalid help request ID."
+                    else:
+                        request_id = int(request_id_raw)
+                        user_request = con.execute(
+                            """
+                            SELECT request_id, request_status, helpdesk_staff_email, request_type
+                            FROM Request
                             WHERE request_id = ?
                             """,
-                            (helpdesk_email, current_db_timestamp(), request_row["request_id"]),
-                        )
-                        con.commit()
-                        message = f"Denied helpdesk request for {applicant_email}."
+                            (request_id,),
+                        ).fetchone()
+                        if not user_request:
+                            error = "Help request not found."
+                        elif (user_request["request_type"] or "").strip().lower() != "add category":
+                            error = "Only Add Category requests can be managed from this dashboard."
+                        else:
+                            assigned_to = normalized_email(user_request["helpdesk_staff_email"])
+                            if assigned_to not in {"", normalized_email(HELPDESK_QUEUE_EMAIL)}:
+                                error = "This request is already claimed by another HelpDesk staff member."
+                            else:
+                                con.execute(
+                                    """
+                                    UPDATE Request
+                                    SET request_status = 1, helpdesk_staff_email = ?
+                                    WHERE request_id = ?
+                                    """,
+                                    (helpdesk_email, request_id),
+                                )
+                                con.commit()
+                                message = f"You claimed Add Category request #{request_id}."
+                else:
+                    error = "Invalid action."
 
             unread_notifications = con.execute(
                 """
@@ -1108,6 +1146,47 @@ def helpdesk_home():
                 """,
             ).fetchall()
 
+            unassigned_category_requests = con.execute(
+                """
+                SELECT request_id, sender_email, request_type, request_desc, request_status, helpdesk_staff_email
+                FROM Request
+                WHERE LOWER(TRIM(request_type)) = 'add category'
+                  AND request_status = 0
+                  AND (
+                      helpdesk_staff_email IS NULL
+                      OR TRIM(helpdesk_staff_email) = ''
+                      OR LOWER(TRIM(helpdesk_staff_email)) = LOWER(TRIM(?))
+                  )
+                ORDER BY request_id DESC
+                LIMIT 30
+                """,
+                (HELPDESK_QUEUE_EMAIL,),
+            ).fetchall()
+
+            my_category_requests = con.execute(
+                """
+                SELECT request_id, sender_email, request_type, request_desc, request_status, helpdesk_staff_email
+                FROM Request
+                WHERE LOWER(TRIM(request_type)) = 'add category'
+                  AND request_status = 1
+                  AND LOWER(TRIM(helpdesk_staff_email)) = LOWER(TRIM(?))
+                ORDER BY request_id DESC
+                LIMIT 20
+                """,
+                (helpdesk_email,),
+            ).fetchall()
+
+            recently_completed_category_requests = con.execute(
+                """
+                SELECT request_id, sender_email, request_type, request_desc, request_status, helpdesk_staff_email
+                FROM Request
+                WHERE LOWER(TRIM(request_type)) = 'add category'
+                  AND request_status IN (2, 3)
+                ORDER BY request_id DESC
+                LIMIT 20
+                """
+            ).fetchall()
+
     except sql.Error as e:
         print("DB error in helpdesk_home:", e)
         error = "Database error while loading helpdesk approvals."
@@ -1116,12 +1195,147 @@ def helpdesk_home():
         "helpdesk_home.html",
         email=helpdesk_email,
         unread_notifications=unread_notifications,
+        unassigned_category_requests=unassigned_category_requests,
+        my_category_requests=my_category_requests,
+        recently_completed_category_requests=recently_completed_category_requests,
+        request_status_label=request_status_label,
         pending_requests=pending_requests,
         request_history=request_history,
         message=message,
         error=error,
     )
 
+
+@app.route('/helpdesk_request/<int:request_id>', methods=['GET', 'POST'])
+def manage_add_category_request(request_id):
+    if "email" not in session or session.get("role") != "HelpDesk":
+        session['login_error'] = 'You must be a Helpdesk Member to access this feature. Please log in.'
+        return redirect(url_for("login"))
+
+    helpdesk_email = session["email"]
+    error = None
+    request_row = None
+    parent_categories = []
+    selected_parent = "Root"
+
+    try:
+        with get_connection() as con:
+            initialize_schema_if_needed(con)
+            mark_helpdesk_active(con, helpdesk_email)
+            con.commit()
+
+            request_row = con.execute(
+                """
+                SELECT request_id, sender_email, helpdesk_staff_email, request_type, request_desc, request_status
+                FROM Request
+                WHERE request_id = ?
+                  AND LOWER(TRIM(request_type)) = 'add category'
+                """,
+                (request_id,),
+            ).fetchone()
+            if not request_row:
+                session["helpdesk_error"] = "Add Category request not found."
+                return redirect(url_for("helpdesk_home"))
+
+            if normalized_email(request_row["helpdesk_staff_email"]) != normalized_email(helpdesk_email):
+                session["helpdesk_error"] = "You can only open Add Category requests assigned to your account."
+                return redirect(url_for("helpdesk_home"))
+
+            if request_row["request_status"] != 1:
+                session["helpdesk_error"] = "Only in-progress Add Category requests can be managed."
+                return redirect(url_for("helpdesk_home"))
+
+            parent_categories = [
+                row["category_name"]
+                for row in con.execute(
+                    """
+                    SELECT category_name
+                    FROM Category
+                    ORDER BY category_name ASC
+                    """
+                ).fetchall()
+            ]
+
+            if request.method == "POST":
+                action = request.form.get("action", "").strip().lower()
+                selected_parent = request.form.get("parent_category", "Root").strip() or "Root"
+
+                if action == "complete_category":
+                    category_name = request.form.get("new_category_name", "").strip()
+                    if not category_name:
+                        error = "Please enter a category name."
+                    else:
+                        parent_exists = (
+                            selected_parent == "Root"
+                            or con.execute(
+                                """
+                                SELECT 1
+                                FROM Category
+                                WHERE LOWER(TRIM(category_name)) = LOWER(TRIM(?))
+                                """,
+                                (selected_parent,),
+                            ).fetchone()
+                        )
+                        if not parent_exists:
+                            error = "Selected parent category does not exist."
+                        else:
+                            duplicate = con.execute(
+                                """
+                                SELECT 1
+                                FROM Category
+                                WHERE LOWER(TRIM(category_name)) = LOWER(TRIM(?))
+                                """,
+                                (category_name,),
+                            ).fetchone()
+                            if duplicate:
+                                error = "That category already exists."
+                            else:
+                                con.execute(
+                                    """
+                                    INSERT INTO Category (category_name, parent_category)
+                                    VALUES (?, ?)
+                                    """,
+                                    (category_name, selected_parent),
+                                )
+                                con.execute(
+                                    """
+                                    UPDATE Request
+                                    SET request_status = 2
+                                    WHERE request_id = ?
+                                    """,
+                                    (request_id,),
+                                )
+                                con.commit()
+                                session["helpdesk_message"] = (
+                                    f'Added category "{category_name}" and completed request #{request_id}.'
+                                )
+                                return redirect(url_for("helpdesk_home"))
+                elif action == "reject_category":
+                    con.execute(
+                        """
+                        UPDATE Request
+                        SET request_status = 3
+                        WHERE request_id = ?
+                        """,
+                        (request_id,),
+                    )
+                    con.commit()
+                    session["helpdesk_message"] = f"Rejected Add Category request #{request_id}."
+                    return redirect(url_for("helpdesk_home"))
+                else:
+                    error = "Invalid action."
+
+    except sql.Error as e:
+        print("DB error in manage_add_category_request:", e)
+        error = "Database error while managing Add Category request."
+
+    return render_template(
+        "helpdesk_category_request.html",
+        request_row=request_row,
+        parent_categories=parent_categories,
+        selected_parent=selected_parent,
+        error=error,
+    )
 
 
 @app.route('/search')
@@ -2358,7 +2572,7 @@ def help_request():
                         (sender_email, helpdesk_staff_email, request_type, request_desc, request_status)
                         VALUES (?, ?, ?, ?, ?)
                         """,
-                        (sender_email, None, request_type, description, 0),
+                        (sender_email, HELPDESK_QUEUE_EMAIL, request_type, description, 0),
                     )
                     create_helpdesk_notifications_for_request(
                         con,

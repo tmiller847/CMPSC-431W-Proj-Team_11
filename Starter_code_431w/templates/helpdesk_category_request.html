@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+    <title>Manage Add Category Request</title>
+    <style>
+        html, body {
+            min-height: 100%;
+            margin: 0;
+            overflow-y: auto;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-image:
+                linear-gradient(rgba(4, 30, 66, 0.75), rgba(3, 26, 60, 0.91)),
+                url("https://psu-gatsby-files-prod.s3.amazonaws.com/s3fs-public/styles/4_3_1500w/public/NL%20statue%20spring124.jpg?h=046da51e&itok=0t_5yVWj");
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+
+        .content {
+            width: 760px;
+            margin: 120px auto;
+            background: #eff3fa;
+            padding: 30px;
+            border: 1px solid #031631;
+            border-radius: 10px;
+        }
+
+        h1 {
+            margin-top: 0;
+            margin-bottom: 16px;
+            text-align: center;
+            font-family: 'Roboto', sans-serif;
+        }
+
+        .meta {
+            margin-bottom: 18px;
+            font-size: 14px;
+        }
+
+        .meta p {
+            margin: 6px 0;
+        }
+
+        label {
+            display: block;
+            margin-top: 12px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        input, select {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 8px;
+            margin-top: 6px;
+            border: 1px solid #c3cedf;
+            border-radius: 6px;
+            background: white;
+        }
+
+        .btn-row {
+            margin-top: 18px;
+        }
+
+        button {
+            padding: 8px 14px;
+            border: none;
+            border-radius: 6px;
+            color: white;
+            background: #2a6ebb;
+            cursor: pointer;
+            margin-right: 8px;
+        }
+
+        .reject-btn {
+            background: #c94b4b;
+        }
+
+        .back-link {
+            margin-top: 14px;
+            font-size: 13px;
+        }
+
+        .back-link a {
+            color: #2a6ebb;
+            text-decoration: none;
+        }
+
+        .error {
+            color: #b30000;
+            font-size: 14px;
+            margin-top: 8px;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+{% include "banner.html" %}
+
+<div class="content">
+    <h1>Manage Add Category Request</h1>
+
+    {% if error %}
+        <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <div class="meta">
+        <p><strong>Request ID:</strong> #{{ request_row['request_id'] }}</p>
+        <p><strong>Sender:</strong> {{ request_row['sender_email'] }}</p>
+        <p><strong>Request:</strong> {{ request_row['request_desc'] }}</p>
+    </div>
+
+    <form method="POST" action="{{ url_for('manage_add_category_request', request_id=request_row['request_id']) }}">
+        <label for="new_category_name">New Category Name</label>
+        <input id="new_category_name" name="new_category_name" type="text" required>
+
+        <label for="parent_category">Parent Category</label>
+        <select id="parent_category" name="parent_category">
+            <option value="Root" {% if selected_parent == "Root" %}selected{% endif %}>Root</option>
+            {% for category in parent_categories %}
+                <option value="{{ category }}" {% if selected_parent == category %}selected{% endif %}>
+                    {{ category }}
+                </option>
+            {% endfor %}
+        </select>
+
+        <div class="btn-row">
+            <button type="submit" name="action" value="complete_category">Complete Request</button>
+            <button class="reject-btn" type="submit" name="action" value="reject_category">Reject Category</button>
+        </div>
+    </form>
+
+    <div class="back-link">
+        <a href="{{ url_for('helpdesk_home') }}">Back to HelpDesk Dashboard</a>
+    </div>
+</div>
+
+</body>
+</html>
