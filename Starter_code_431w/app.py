@@ -3,7 +3,7 @@ from pathlib import Path
 import sqlite3 as sql
 import hashlib
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Flask, render_template, request, session, redirect, url_for
 
@@ -199,6 +199,67 @@ def current_db_timestamp():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def normalized_email(value):
+    return (value or "").strip().lower()
+
+
+def mark_helpdesk_active(connection, helpdesk_email):
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS Helpdesk_Active_Session (
+            email TEXT PRIMARY KEY,
+            last_seen_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO Helpdesk_Active_Session (email, last_seen_at)
+        VALUES (?, ?)
+        ON CONFLICT(email) DO UPDATE SET last_seen_at = excluded.last_seen_at
+        """,
+        (normalized_email(helpdesk_email), current_db_timestamp()),
+    )
+
+
+def get_active_helpdesk_emails(connection, minutes=10):
+    cutoff = (datetime.now() - timedelta(minutes=int(minutes))).strftime("%Y-%m-%d %H:%M:%S")
+    return [
+        row["email"]
+        for row in connection.execute(
+            """
+            SELECT email
+            FROM Helpdesk_Active_Session
+            WHERE last_seen_at >= ?
+            """,
+            (cutoff,),
+        ).fetchall()
+    ]
+
+
+def create_helpdesk_notifications_for_request(connection, request_id, sender_email, request_type):
+    active_helpdesk_emails = get_active_helpdesk_emails(connection, minutes=10)
+    for helpdesk_email in active_helpdesk_emails:
+        connection.execute(
+            """
+            INSERT INTO Helpdesk_Request_Notification
+            (request_id, helpdesk_email, sender_email, request_type, message, is_read, created_at)
+            VALUES (?, ?, ?, ?, ?, 0, ?)
+            """,
+            (
+                request_id,
+                normalized_email(helpdesk_email),
+                normalized_email(sender_email),
+                request_type,
+                (
+                    f"New help request #{request_id} from {normalized_email(sender_email)} "
+                    f"({request_type})."
+                ),
+                current_db_timestamp(),
+            ),
+        )
+
+
 def parse_datetime_local_input(value):
     try:
         parsed = datetime.fromisoformat(value.strip())
@@ -270,6 +331,28 @@ def ensure_runtime_schema(connection):
             approver_email TEXT,
             requested_at TEXT NOT NULL,
             decided_at TEXT
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS Helpdesk_Active_Session (
+            email TEXT PRIMARY KEY,
+            last_seen_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS Helpdesk_Request_Notification (
+            notification_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_id INTEGER NOT NULL,
+            helpdesk_email TEXT NOT NULL,
+            sender_email TEXT NOT NULL,
+            request_type TEXT NOT NULL,
+            message TEXT NOT NULL,
+            is_read INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
         )
         """
     )
@@ -918,10 +1001,13 @@ def helpdesk_home():
     message = None
     pending_requests = []
     request_history = []
+    unread_notifications = []
 
     try:
         with get_connection() as con:
             initialize_schema_if_needed(con)
+            mark_helpdesk_active(con, helpdesk_email)
+            con.commit()
 
             if request.method == "POST":
                 action = request.form.get("action", "").strip().lower()
@@ -973,6 +1059,36 @@ def helpdesk_home():
                         con.commit()
                         message = f"Denied helpdesk request for {applicant_email}."
 
+            unread_notifications = con.execute(
+                """
+                SELECT notification_id, request_id, sender_email, request_type, message, created_at
+                FROM Helpdesk_Request_Notification
+                WHERE LOWER(TRIM(helpdesk_email)) = LOWER(TRIM(?))
+                  AND is_read = 0
+                ORDER BY notification_id DESC
+                LIMIT 20
+                """,
+                (helpdesk_email,),
+            ).fetchall()
+
+            if unread_notifications:
+                notification_ids = [
+                    str(row["notification_id"])
+                    for row in unread_notifications
+                    if row["notification_id"] is not None
+                ]
+                if notification_ids:
+                    placeholder = ",".join(["?"] * len(notification_ids))
+                    con.execute(
+                        f"""
+                        UPDATE Helpdesk_Request_Notification
+                        SET is_read = 1
+                        WHERE notification_id IN ({placeholder})
+                        """,
+                        notification_ids,
+                    )
+                    con.commit()
+
             pending_requests = con.execute(
                 """
                 SELECT applicant_email, applicant_name, requested_at
@@ -999,6 +1115,7 @@ def helpdesk_home():
     return render_template(
         "helpdesk_home.html",
         email=helpdesk_email,
+        unread_notifications=unread_notifications,
         pending_requests=pending_requests,
         request_history=request_history,
         message=message,
@@ -2235,13 +2352,19 @@ def help_request():
                 if not request_type or not description:
                     error = "Please provide both request type and description."
                 else:
-                    con.execute(
+                    request_result = con.execute(
                         """
                         INSERT INTO Request
                         (sender_email, helpdesk_staff_email, request_type, request_desc, request_status)
                         VALUES (?, ?, ?, ?, ?)
                         """,
                         (sender_email, None, request_type, description, 0),
+                    )
+                    create_helpdesk_notifications_for_request(
+                        con,
+                        request_result.lastrowid,
+                        sender_email,
+                        request_type,
                     )
                     con.commit()
                     message = "Your request was sent successfully."
