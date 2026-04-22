@@ -17,6 +17,18 @@ CREATE TABLE Auction_Listing(seller_email TEXT,
                              FOREIGN KEY(seller_email) REFERENCES User(email),
                              FOREIGN KEY(category) REFERENCES Category(category_name));
 
+CREATE TABLE Auction_Notification(notification_id INTEGER PRIMARY KEY AUTOINCREMENT,
+				  listing_ID INTEGER NOT NULL,
+				  bidder_email TEXT NOT NULL,
+				  seller_email TEXT NOT NULL,
+				  winner_email TEXT,
+				  highest_bid INTEGER,
+				  can_pay INTEGER NOT NULL DEFAULT 0,
+				  message TEXT NOT NULL,
+				  created_at TEXT NOT NULL,
+				  UNIQUE(listing_ID, bidder_email));
+
+
 CREATE TABLE Bidder(email TEXT PRIMARY KEY,
                     first_name TEXT,
                     last_name TEXT,
@@ -25,6 +37,17 @@ CREATE TABLE Bidder(email TEXT PRIMARY KEY,
                     major TEXT,
                     FOREIGN KEY(email) REFERENCES User(email),
                     FOREIGN KEY(home_address_id) REFERENCES Address(address_id));
+
+CREATE TABLE Bidder_Notification(notification_id INTEGER PRIMARY KEY AUTOINCREMENT,
+				 listing_ID INTEGER NOT NULL,
+				 bidder_email TEXT NOT NULL,
+				 seller_email TEXT,
+				 winner_email TEXT,
+				 highest_bid INTEGER,
+				 can_pay INTEGER NOT NULL DEFAULT 0,
+				 notification_type TEXT NOT NULL,
+				 message TEXT NOT NULL,
+				 created_at TEXT NOT NULL);
 
 CREATE TABLE Bid(bid_ID INTEGER PRIMARY KEY,
                  seller_email TEXT,
@@ -55,16 +78,20 @@ CREATE TABLE Helpdesk(email TEXT PRIMARY KEY,
                       position TEXT,
                       FOREIGN KEY(email) REFERENCES User(email));
 
+CREATE TABLE Helpdesk_Approval_Request(request_id INTEGER PRIMARY KEY AUTOINCREMENT,
+				       applicant_email TEXT NOT NULL UNIQUE,
+				       applicant_name TEXT,
+				       request_status INTEGER NOT NULL DEFAULT 0,
+				       approver_email TEXT,
+				       requested_at TEXT NOT NULL,
+				       decided_at TEXT);
+
 CREATE TABLE Local_Vendor(email	TEXT PRIMARY KEY,
                           business_name TEXT,
                           business_address_ID TEXT,
                           customer_service_phone_number TEXT,
                           FOREIGN KEY(email) REFERENCES User(email),
                           FOREIGN KEY(business_address_ID) REFERENCES Address(address_id));
-
-CREATE TABLE New_HelpDesk_Notification(email TEXT PRIMARY KEY,
-				       password TEXT,
-				       position TEXT);
 
 CREATE TABLE Notification(nid INTEGER PRIMARY KEY,
 			  email TEXT,
@@ -77,6 +104,7 @@ CREATE TABLE Rating(bidder_email TEXT,
                     date DATE,
                     rating INTEGER,
                     rating_desc TEXT,
+		    listing_ID INTEGER,
                     PRIMARY KEY(bidder_email, seller_email, date),
                     FOREIGN KEY(bidder_email) REFERENCES User(email),
                     FOREIGN KEY(seller_email) REFERENCES User(email));
@@ -112,11 +140,11 @@ CREATE TABLE User_Update_Notification(email TEXT PRIMARY KEY,
 				      new_email TEXT,
 				      FOREIGN KEY(email) REFERENCES User(email));
 
-CREATE TABLE Wishlist(email TEXT,
-		      listing_ID INTEGER,
-		      PRIMARY KEY(email, listing_ID),
-		      FOREIGN KEY(email) REFERENCES User(email),
-		      FOREIGN KEY(listing_ID) REFERENCES Auction_Listing(listing_ID));
+CREATE TABLE Wishlist(wishlist_id INTEGER PRIMARY KEY AUTOINCREMENT,
+		      listing_ID INTEGER NOT NULL,
+		      email TEXT NOT NULL,
+		      created_at TEXT NOT NULL,
+		      UNIQUE(listing_ID, email));
 
 CREATE TABLE Zipcode(zipcode INTEGER PRIMARY KEY,
                      city TEXT,
