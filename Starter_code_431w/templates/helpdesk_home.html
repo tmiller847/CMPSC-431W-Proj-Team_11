@@ -8,9 +8,9 @@
     <title>HelpDesk Dashboard</title>
     <style>
         html, body {
-            height: 100%;
+            min-height: 100%;
             margin: 0;
-            overflow: hidden;
+            overflow-y: auto;
         }
         
         body {
@@ -61,7 +61,7 @@
         }
 
         .content {
-            width: 500px;
+            width: 900px;
             margin: 100px auto;
             background: white;
             padding: 25px;
@@ -83,6 +83,60 @@
             font-size: 13px;
             color: #666;
         }
+
+        .message {
+            color: green;
+            margin-top: 14px;
+            font-size: 14px;
+        }
+
+        .error {
+            color: red;
+            margin-top: 14px;
+            font-size: 14px;
+        }
+
+        h2 {
+            margin-top: 24px;
+            margin-bottom: 8px;
+            color: #333;
+            font-size: 22px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 8px;
+            font-size: 14px;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 8px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background: #f5f5f5;
+        }
+
+        .action-form {
+            display: inline-block;
+            margin-right: 6px;
+        }
+
+        button {
+            padding: 6px 10px;
+            border: none;
+            border-radius: 6px;
+            color: white;
+            background: #2a6ebb;
+            cursor: pointer;
+        }
+
+        .deny-btn {
+            background: #c94b4b;
+        }
     </style>
 </head>
 <body>
@@ -97,8 +151,79 @@
     </div>
 
     <div class="note">
-        You can manage user requests here.
+        You can manage user requests and HelpDesk approvals here.
     </div>
+
+    {% if message %}
+        <div class="message">{{ message }}</div>
+    {% endif %}
+    {% if error %}
+        <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <h2>Pending HelpDesk Approvals</h2>
+    {% if pending_requests %}
+        <table>
+            <tr>
+                <th>Applicant</th>
+                <th>Name</th>
+                <th>Requested At</th>
+                <th>Decision</th>
+            </tr>
+            {% for req in pending_requests %}
+                <tr>
+                    <td>{{ req['applicant_email'] }}</td>
+                    <td>{{ req['applicant_name'] or "N/A" }}</td>
+                    <td>{{ req['requested_at'] }}</td>
+                    <td>
+                        <form class="action-form" method="POST" action="{{ url_for('helpdesk_home') }}">
+                            <input type="hidden" name="applicant_email" value="{{ req['applicant_email'] }}">
+                            <input type="hidden" name="action" value="approve">
+                            <button type="submit">Approve</button>
+                        </form>
+                        <form class="action-form" method="POST" action="{{ url_for('helpdesk_home') }}">
+                            <input type="hidden" name="applicant_email" value="{{ req['applicant_email'] }}">
+                            <input type="hidden" name="action" value="deny">
+                            <button class="deny-btn" type="submit">Deny</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+        </table>
+    {% else %}
+        <p class="note">No pending HelpDesk signup requests.</p>
+    {% endif %}
+
+    <h2>Recent Approval Decisions</h2>
+    {% if request_history %}
+        <table>
+            <tr>
+                <th>Applicant</th>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Approved/Denied By</th>
+                <th>Requested At</th>
+                <th>Decided At</th>
+            </tr>
+            {% for req in request_history %}
+                <tr>
+                    <td>{{ req['applicant_email'] }}</td>
+                    <td>{{ req['applicant_name'] or "N/A" }}</td>
+                    <td>
+                        {% if req['request_status'] == 1 %}Approved
+                        {% elif req['request_status'] == 2 %}Denied
+                        {% else %}Pending
+                        {% endif %}
+                    </td>
+                    <td>{{ req['approver_email'] or "N/A" }}</td>
+                    <td>{{ req['requested_at'] }}</td>
+                    <td>{{ req['decided_at'] or "N/A" }}</td>
+                </tr>
+            {% endfor %}
+        </table>
+    {% else %}
+        <p class="note">No recent decisions.</p>
+    {% endif %}
 </div>
 
 </body>

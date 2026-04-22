@@ -260,6 +260,19 @@ def ensure_runtime_schema(connection):
         )
         """
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS Helpdesk_Approval_Request (
+            request_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            applicant_email TEXT NOT NULL UNIQUE,
+            applicant_name TEXT,
+            request_status INTEGER NOT NULL DEFAULT 0,
+            approver_email TEXT,
+            requested_at TEXT NOT NULL,
+            decided_at TEXT
+        )
+        """
+    )
     connection.commit()
 
 
@@ -626,7 +639,20 @@ def login():
                             return redirect(url_for("choose_role_page"))
 
                         else:
-                            error = "User authenticated, but role was not found."
+                            pending_helpdesk = connection.execute(
+                                """
+                                SELECT request_status
+                                FROM Helpdesk_Approval_Request
+                                WHERE LOWER(TRIM(applicant_email)) = ?
+                                """,
+                                (normalized_email,),
+                            ).fetchone()
+                            if pending_helpdesk and pending_helpdesk["request_status"] == 0:
+                                error = "Your HelpDesk registration is pending approval."
+                            elif pending_helpdesk and pending_helpdesk["request_status"] == 2:
+                                error = "Your HelpDesk registration was denied."
+                            else:
+                                error = "User authenticated, but role was not found."
                     else:
                         error = "Invalid email or password."
 
@@ -651,11 +677,11 @@ def choose_role():
         return redirect(url_for("login"))
     session["role"] = role
     if role == "Seller":
-        return render_template("seller_home.html", email=email)
+        return redirect(url_for("seller_home"))
     elif role == "Bidder":
-        return render_template("bidder_home.html", email=email)
+        return redirect(url_for("bidder_home"))
     elif role == "HelpDesk":
-        return render_template("helpdesk_home.html", email=email)
+        return redirect(url_for("helpdesk_home"))
 
     session['login_error'] = 'Invalid role selected.'
     return redirect(url_for("login"))
@@ -881,12 +907,103 @@ def seller_home():
     )
 
 
-@app.route('/helpdesk_home')
+@app.route('/helpdesk_home', methods=['GET', 'POST'])
 def helpdesk_home():
     if "email" not in session or session.get("role") != "HelpDesk":
         session['login_error'] = 'You must be a Helpdesk Member to access this feature. Please log in.'
         return redirect(url_for("login"))
-    return render_template("helpdesk_home.html", email=session["email"])
+
+    helpdesk_email = session["email"]
+    error = None
+    message = None
+    pending_requests = []
+    request_history = []
+
+    try:
+        with get_connection() as con:
+            initialize_schema_if_needed(con)
+
+            if request.method == "POST":
+                action = request.form.get("action", "").strip().lower()
+                applicant_email = request.form.get("applicant_email", "").strip().lower()
+                if not applicant_email:
+                    error = "Invalid applicant email."
+                else:
+                    request_row = con.execute(
+                        """
+                        SELECT request_id, applicant_email, request_status
+                        FROM Helpdesk_Approval_Request
+                        WHERE LOWER(TRIM(applicant_email)) = LOWER(TRIM(?))
+                        """,
+                        (applicant_email,),
+                    ).fetchone()
+                    if not request_row:
+                        error = "Request not found."
+                    elif request_row["request_status"] != 0:
+                        error = "This request has already been decided."
+                    elif action not in {"approve", "deny"}:
+                        error = "Invalid action."
+                    elif action == "approve":
+                        con.execute(
+                            """
+                            INSERT OR IGNORE INTO Helpdesk (email, position)
+                            VALUES (?, ?)
+                            """,
+                            (applicant_email, None),
+                        )
+                        con.execute(
+                            """
+                            UPDATE Helpdesk_Approval_Request
+                            SET request_status = 1, approver_email = ?, decided_at = ?
+                            WHERE request_id = ?
+                            """,
+                            (helpdesk_email, current_db_timestamp(), request_row["request_id"]),
+                        )
+                        con.commit()
+                        message = f"Approved helpdesk request for {applicant_email}."
+                    else:
+                        con.execute(
+                            """
+                            UPDATE Helpdesk_Approval_Request
+                            SET request_status = 2, approver_email = ?, decided_at = ?
+                            WHERE request_id = ?
+                            """,
+                            (helpdesk_email, current_db_timestamp(), request_row["request_id"]),
+                        )
+                        con.commit()
+                        message = f"Denied helpdesk request for {applicant_email}."
+
+            pending_requests = con.execute(
+                """
+                SELECT applicant_email, applicant_name, requested_at
+                FROM Helpdesk_Approval_Request
+                WHERE request_status = 0
+                ORDER BY request_id DESC
+                """,
+            ).fetchall()
+
+            request_history = con.execute(
+                """
+                SELECT applicant_email, applicant_name, request_status, approver_email, requested_at, decided_at
+                FROM Helpdesk_Approval_Request
+                WHERE request_status IN (1, 2)
+                ORDER BY request_id DESC
+                LIMIT 20
+                """,
+            ).fetchall()
+
+    except sql.Error as e:
+        print("DB error in helpdesk_home:", e)
+        error = "Database error while loading helpdesk approvals."
+
+    return render_template(
+        "helpdesk_home.html",
+        email=helpdesk_email,
+        pending_requests=pending_requests,
+        request_history=request_history,
+        message=message,
+        error=error,
+    )
 
 
 
@@ -1576,10 +1693,33 @@ def signup():
                                 (normalized_email, None, None, 0),
                             )
                         elif role == "HelpDesk":
-                            con.execute(
-                                "INSERT INTO Helpdesk (email, position) VALUES (?, ?)",
-                                (normalized_email, None),
-                            )
+                            existing_helpdesk = con.execute(
+                                "SELECT COUNT(*) AS count FROM Helpdesk"
+                            ).fetchone()
+                            has_helpdesk = existing_helpdesk and existing_helpdesk["count"] > 0
+
+                            if has_helpdesk:
+                                con.execute(
+                                    """
+                                    INSERT INTO Helpdesk_Approval_Request
+                                    (applicant_email, applicant_name, request_status, approver_email, requested_at, decided_at)
+                                    VALUES (?, ?, ?, ?, ?, ?)
+                                    """,
+                                    (
+                                        normalized_email,
+                                        full_name,
+                                        0,
+                                        None,
+                                        current_db_timestamp(),
+                                        None,
+                                    ),
+                                )
+                            else:
+                                # Bootstrap path: if no helpdesk exists yet, allow first one immediately.
+                                con.execute(
+                                    "INSERT INTO Helpdesk (email, position) VALUES (?, ?)",
+                                    (normalized_email, None),
+                                )
 
                         if phone and role == "Seller":
                             con.execute(
@@ -1591,7 +1731,16 @@ def signup():
                                 (normalized_email, None, None, phone),
                             )
                         con.commit()
-                        message = "Account created successfully. Please log in."
+                        if role == "HelpDesk":
+                            if has_helpdesk:
+                                message = (
+                                    "HelpDesk registration submitted. "
+                                    "Please wait for approval from current HelpDesk staff."
+                                )
+                            else:
+                                message = "HelpDesk account created successfully. Please log in."
+                        else:
+                            message = "Account created successfully. Please log in."
                         form_data = {"email": "", "name": "", "phone": "", "role": "Bidder"}
             except sql.Error as e:
                 print("DB error in signup:", e)
