@@ -2573,25 +2573,57 @@ def seller_products():
                                     con.commit()
                                     message = "Listing created successfully."
 
+
+
+
                 elif form_type == "delete":
                     listing_id_raw = request.form.get("product_id", "").strip()
+                    reason = request.form.get("reason", "").strip()
                     if not listing_id_raw.isdigit():
+
                         error = "Invalid listing ID."
+                    elif not reason:
+                        error = "Please provide a reason for removing the listing."
                     else:
+
                         listing_id = int(listing_id_raw)
-                        result = con.execute(
+                        listing = con.execute(
                             """
-                            UPDATE Auction_Listing
-                            SET status = 0
-                            WHERE listing_ID = ? AND LOWER(TRIM(seller_email)) = ?
+
+                            SELECT listing_ID, status, max_bids
+                            FROM Auction_Listing
+                            WHERE listing_ID = ?
+                              AND LOWER(TRIM(seller_email)) = ?
                             """,
                             (listing_id, seller_email),
-                        )
-                        if result.rowcount == 0:
+                        ).fetchone()
+                        if not listing:
                             error = "Listing not found or not owned by you."
+                        elif listing["status"] == 2:
+                            error = "Sold listings cannot be removed."
                         else:
+
+                            bid_count = con.execute(
+                                "SELECT COUNT(*) FROM Bid WHERE listing_ID = ?",
+                                (listing_id,)
+                            ).fetchone()[0]
+
+                            remaining_bids = listing["max_bids"] - bid_count
+                            con.execute(
+                                "UPDATE Auction_Listing SET status = 0 WHERE listing_ID = ?",
+                                (listing_id,),
+                            )
+                            con.execute(
+                                """
+                                INSERT INTO Listing_Removal
+                                    (listing_ID, seller_email, removed_at, remaining_bids, reason)
+                                VALUES (?, ?, ?, ?, ?)
+                                """,
+                                (listing_id, seller_email, current_db_timestamp(), remaining_bids, reason),
+                            )
                             con.commit()
-                            message = "Listing marked as inactive."
+                            message = "Listing removed from market."
+
                 else:
                     error = "Invalid form action."
 
@@ -2602,10 +2634,22 @@ def seller_products():
 
             rows = con.execute(
                 """
-                SELECT listing_ID, auction_title, category, reserve_price, max_bids, status, end_time
-                FROM Auction_Listing
-                WHERE LOWER(TRIM(seller_email)) = ?
-                ORDER BY listing_ID DESC
+                SELECT
+                    al.listing_ID,
+                    al.auction_title,
+                    al.category,
+                    al.reserve_price,
+                    al.max_bids,
+                    al.status,
+                    al.end_time,
+                    (
+                        SELECT COUNT(*)
+                        FROM Bid b
+                        WHERE b.listing_ID = al.listing_ID
+                    ) AS bid_count
+                FROM Auction_Listing al
+                WHERE LOWER(TRIM(al.seller_email)) = LOWER(TRIM(?))
+                ORDER BY al.listing_ID DESC
                 """,
                 (seller_email,),
             ).fetchall()
@@ -2619,6 +2663,15 @@ def seller_products():
                     "max_bids": row["max_bids"],
                     "status": listing_status_label(row["status"]),
                     "end_time": row["end_time"] or "",
+                    "bid_count": row["bid_count"],
+                    "can_edit": not (row["status"] == 2 or (row["status"] == 1 and row["bid_count"] > 0)),
+                    "can_remove": row["status"] != 2,
+                    "edit_blocked_reason": (
+                        "Sold listings cannot be edited." if row["status"] == 2
+                        else "This listing has active bids and cannot be edited." if row["status"] == 1 and row[
+                            "bid_count"] > 0
+                        else None
+                    ),
                 }
                 for row in rows
             ]
@@ -2634,6 +2687,7 @@ def seller_products():
         message=message,
         error=error,
     )
+
 
 @app.route("/help_request", methods=["GET", "POST"])
 def help_request():

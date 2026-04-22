@@ -15,17 +15,16 @@
 
         body {
             font-family: Arial, sans-serif;
-            background-image: 
+            background-image:
                 linear-gradient(rgba(4, 30, 66, 0.75), rgba(3, 26, 60, 0.91)),
                 url("https://psu-gatsby-files-prod.s3.amazonaws.com/s3fs-public/styles/4_3_1500w/public/NL%20statue%20spring124.jpg?h=046da51e&itok=0t_5yVWj");
-
             background-size: cover;
             background-position: center;
             background-repeat: no-repeat;
         }
 
         .banner {
-            background: 
+            background:
                 linear-gradient(rgba(4, 33, 73, 0.75), rgba(3, 26, 60, 0.91))
                 #001E44;
             color: white;
@@ -54,13 +53,11 @@
         }
 
         .banner-right a:hover,
-        .banner-left .brand:hover {
-            text-decoration: underline;
-        }
+        .banner-left .brand:hover { text-decoration: underline; }
 
         .box {
-            width: 800px;
-            margin: 120px auto;
+            width: 900px;
+            margin: 40px auto;
             background: #eff3fa;
             padding: 30px;
             border: 1px solid #031631;
@@ -69,35 +66,25 @@
 
         h2 {
             margin-top: 0;
-            margin-bottom: 0;
             font-size: 32px;
             text-align: center;
             font-family: 'Roboto', sans-serif;
         }
 
-        h3 {
-            margin-top: 10;
-            font-size: 20px;
-            text-align: center;
-        }
+        h3 { font-size: 20px; text-align: center; margin-top: 24px; }
 
-        label {
-            display: block;
-            margin-top: 0px;
-            font-size: 20px;
-        }
+        label { display: block; font-size: 16px; }
 
         input, select, textarea {
             width: 100%;
             padding: 6px;
             margin-top: 4px;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
             box-sizing: border-box;
+            font-size: 14px;
         }
 
-        textarea {
-            resize: vertical;
-        }
+        textarea { resize: vertical; }
 
         button {
             padding: 8px 14px;
@@ -106,90 +93,58 @@
             border: none;
             border-radius: 8px;
             cursor: pointer;
+            font-size: 14px;
         }
 
-        button:hover {
-            background: #1f5692;
-        }
+        button:hover { background: #1f5692; }
 
         .create_listing_button {
             width: 20%;
             padding: 10px 14px;
-            background: #2a6ebb;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
             font-size: 18px;
         }
 
-        .message {
-            color: green;
-            text-align: center;
-            margin-bottom: 10px;
-            font-size: 13px;
-        }
+        .message { color: green; text-align: center; margin-bottom: 10px; font-size: 13px; }
+        .error   { color: red;   text-align: center; margin-bottom: 10px; font-size: 13px; }
+        .blocked { color: #856404; font-size: 12px; font-style: italic; display: block; margin-bottom: 4px; }
 
-        .error {
-            color: red;
-            text-align: center;
-            margin-bottom: 10px;
-            font-size: 13px;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 0;
-        }
+        table { width: 100%; border-collapse: collapse; }
 
         th, td {
             border: 1px solid #ccc;
             padding: 8px;
             text-align: center;
-            font-size: 14px;
+            font-size: 13px;
+            vertical-align: middle;
         }
 
-        th {
-            background-color: #f2f2f2;
-        }
-
-        .top-link {
-            text-align: center;
-            margin-top: 15px;
-            font-size: 12px;
-        }
-
-        .top-link a {
-            font-size: 20px;
-            color: #2a6ebb;
-            text-decoration: none;
-        }
-
-        .top-link a:hover {
-            text-decoration: underline;
-        }
-
-        .inline-form {
-            display: inline;
-        }
-
-        .remove-btn {
-            background: #c94b4b;
-        }
-
-        .remove-btn:hover {
-            background: #a83939;
-        }
+        th { background-color: #f2f2f2; }
 
         .table-container {
-            max-height: 200px;
+            max-height: 320px;
             overflow-y: auto;
-            margin-top: 20px;
+            margin-top: 10px;
             border: 1px solid #ccc;
             border-radius: 8px;
-            padding: 0;
         }
+
+        .top-link { text-align: center; margin-top: 20px; }
+        .top-link a { font-size: 18px; color: #2a6ebb; text-decoration: none; }
+        .top-link a:hover { text-decoration: underline; }
+
+        .inline-form { display: inline; }
+
+        .edit-btn { background: #2a6ebb; margin-bottom: 4px; }
+        .remove-btn { background: #c94b4b; }
+        .remove-btn:hover { background: #a83939; }
+
+        .reason-row { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+        .reason-row input[type=text] {
+            flex: 1; padding: 5px 8px; font-size: 12px;
+            border: 1px solid #aab; border-radius: 4px;
+            margin: 0; width: auto;
+        }
+        .reason-row button { white-space: nowrap; padding: 5px 10px; font-size: 12px; }
     </style>
 </head>
 <body>
@@ -198,16 +153,10 @@
 <div class="box">
     <h2>Manage My Listings</h2>
 
-    {% if message %}
-        <div class="message">{{ message }}</div>
-    {% endif %}
-
-    {% if error %}
-        <div class="error">{{ error }}</div>
-    {% endif %}
+    {% if message %}<div class="message">{{ message }}</div>{% endif %}
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
     <h3>Create New Listing</h3>
-
     <form method="POST" action="{{ url_for('seller_products') }}">
         <input type="hidden" name="form_type" value="create">
 
@@ -215,7 +164,7 @@
         <input type="text" name="title" required>
 
         <label>Description</label>
-        <textarea name="description" rows="4" required></textarea>
+        <textarea name="description" rows="3" required></textarea>
 
         <label>Category</label>
         <select name="category" required>
@@ -225,7 +174,7 @@
             {% endfor %}
         </select>
 
-        <label>Reserve Price</label>
+        <label>Reserve Price ($)</label>
         <input type="number" step="0.01" name="reserve_price" required>
 
         <label>Max Bids</label>
@@ -238,33 +187,41 @@
     </form>
 
     <h3>My Current Listings</h3>
-
     <div class="table-container">
         <table>
             <tr>
                 <th>Title</th>
                 <th>Category</th>
                 <th>Reserve Price</th>
+                <th>Bids</th>
                 <th>Max Bids</th>
                 <th>End Time</th>
                 <th>Status</th>
                 <th>Actions</th>
             </tr>
-
-            {% for product in products %}
+            {% for p in products %}
             <tr>
-                <td>{{product.title}}</td>
-                <td>{{ product.category }}</td>
-                <td>${{ product.reserve_price }}</td>
-                <td>{{ product.max_bids }}</td>
-                <td>{{ product.end_time or "N/A" }}</td>
-                <td>{{ product.status }}</td>
+                <td>{{ p.title }}</td>
+                <td>{{ p.category }}</td>
+                <td>${{ p.reserve_price }}</td>
+                <td>{{ p.bid_count }}</td>
+                <td>{{ p.max_bids }}</td>
+                <td>{{ p.end_time or "N/A" }}</td>
+                <td>{{ p.status }}</td>
                 <td>
-                    <form method="POST" action="{{ url_for('seller_products') }}" class="inline-form">
-                        <input type="hidden" name="form_type" value="delete">
-                        <input type="hidden" name="product_id" value="{{ product.id }}">
-                        <button type="submit" class="remove-btn">Remove</button>
-                    </form>
+                    {% if p.can_remove %}
+                        <form method="POST" action="{{ url_for('seller_products') }}">
+                            <input type="hidden" name="form_type" value="delete">
+                            <input type="hidden" name="product_id" value="{{ p.id }}">
+
+                            <div class="reason-row">
+                                <input type="text" name="reason" placeholder="Reason for removal" required>
+                                <button type="submit" class="remove-btn">Remove</button>
+                            </div>
+                        </form>
+                    {% else %}
+                        <span class="blocked">Sold listings cannot be removed.</span>
+                    {% endif %}
                 </td>
             </tr>
             {% endfor %}
