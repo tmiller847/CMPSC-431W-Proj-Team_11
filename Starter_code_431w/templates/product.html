@@ -104,6 +104,11 @@
         <p><strong>Description:</strong> {{ product['product_description'] }}</p>
         <p><strong>Category:</strong> {{ product['category'] }}</p>
         <p><strong>Seller:</strong> {{ product['seller_email'] }}</p>
+        {% if seller_rating is not none %}
+            <p><strong>Seller Rating:</strong> {{ seller_rating }} / 5.0 ({{ rating_count }} review{% if rating_count != 1 %}s{% endif %})</p>
+        {% else %}
+            <p><strong>Seller Rating:</strong> No ratings yet</p>
+        {% endif %}
         <p><strong>Quantity:</strong> {{ product['quantity'] }}</p>
         <p><strong>Reserve Price:</strong> {{ product['reserve_price'] }}</p>
         <p><strong>Max Bids:</strong> {{ product['max_bids'] }}</p>

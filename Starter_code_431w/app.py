@@ -1156,6 +1156,8 @@ def product_page(listing_id):
     remaining_bids = 0
     wishlisted = False
     wishlist_feedback = session.pop("wishlist_feedback", None)
+    seller_rating = None
+    rating_count = 0
 
     try:
         with get_connection() as connection:
@@ -1200,6 +1202,16 @@ def product_page(listing_id):
             ).fetchone()
             wishlisted = bool(wishlisted_row)
 
+            rating_row = connection.execute("""
+                SELECT ROUND(AVG(rating), 1) AS seller_rating,
+                    COUNT(rating) AS rating_count
+                FROM Rating
+                WHERE LOWER(TRIM(seller_email)) = LOWER(TRIM(?))
+            """, (product["seller_email"],)).fetchone()
+
+            if rating_row:
+                seller_rating = rating_row["seller_rating"]
+                rating_count = rating_row["rating_count"]
     except sql.Error as e:
         print("Database error:", e)
         error = "Database error while loading product."
@@ -1213,6 +1225,8 @@ def product_page(listing_id):
         error=error,
         wishlisted=wishlisted,
         wishlist_feedback=wishlist_feedback,
+        seller_rating=seller_rating,
+        rating_count=rating_count,
     )
 
 
