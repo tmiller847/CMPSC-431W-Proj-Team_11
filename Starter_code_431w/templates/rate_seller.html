@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+
+    <title>Rate Seller</title>
+
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-image:
+                linear-gradient(rgba(4, 30, 66, 0.75), rgba(3, 26, 60, 0.91)),
+                url("https://psu-gatsby-files-prod.s3.amazonaws.com/s3fs-public/styles/4_3_1500w/public/NL%20statue%20spring124.jpg?h=046da51e&itok=0t_5yVWj");
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+
+        .rating-box {
+            width: 500px;
+            margin: 100px auto;
+            background: #eff3fa;
+            padding: 30px;
+            border: 1px solid #031631;
+            border-radius: 10px;
+        }
+
+        h2 {
+            margin-top: 0;
+            text-align: center;
+            font-size: 30px;
+            font-family: 'Roboto', sans-serif;
+        }
+
+        label {
+            display: block;
+            margin-top: 15px;
+            font-size: 15px;
+        }
+
+        select, textarea, button {
+            width: 100%;
+            padding: 8px;
+            margin-top: 6px;
+            box-sizing: border-box;
+        }
+
+        textarea {
+            resize: vertical;
+        }
+
+        button {
+            margin-top: 18px;
+            background: #2a6ebb;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #1f5692;
+        }
+
+        .message {
+            color: green;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .error {
+            color: red;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+{% include "banner.html" %}
+
+<div class="rating-box">
+    <h2>Rate Seller</h2>
+
+    {% if error %}
+        <p class="error">{{ error }}</p>
+    {% endif %}
+
+    {% if message %}
+        <p class="message">{{ message }}</p>
+    {% endif %}
+
+    {% if listing and not message %}
+        <p><strong>Auction:</strong> {{ listing['auction_title'] }}</p>
+        <p><strong>Seller:</strong> {{ listing['seller_email'] }}</p>
+
+        <form method="POST">
+            <label for="rating">Rating</label>
+            <select name="rating" required>
+                <option value="">Select a rating</option>
+                <option value="5">5 - Excellent</option>
+                <option value="4">4 - Good</option>
+                <option value="3">3 - Average</option>
+                <option value="2">2 - Poor</option>
+                <option value="1">1 - Very Poor</option>
+            </select>
+
+            <label for="rating_desc">Review</label>
+            <textarea name="rating_desc" rows="5" placeholder="Write your review here..."></textarea>
+
+            <button type="submit">Submit Rating</button>
+        </form>
+    {% endif %}
+</div>
+
+</body>
+</html>

@@ -701,7 +701,19 @@ def bidder_home():
                            FROM Bid b_my
                            WHERE b_my.listing_ID = al.listing_ID
                              AND LOWER(TRIM(b_my.bidder_email)) = LOWER(TRIM(?))
-                       ) AS my_highest_bid
+                       ) AS my_highest_bid,
+                    EXISTS (
+                       SELECT 1
+                       FROM Transact t
+                       WHERE t.listing_ID = al.listing_ID
+                         AND LOWER(TRIM(t.bidder_email)) = LOWER(TRIM(?))
+                   ) AS has_paid,
+                   EXISTS (
+                       SELECT 1
+                       FROM Rating r
+                       WHERE r.listing_ID = al.listing_ID
+                         AND LOWER(TRIM(r.bidder_email)) = LOWER(TRIM(?))
+                   ) AS has_rated
                 FROM Auction_Listing al
                 WHERE EXISTS (
                     SELECT 1
@@ -710,7 +722,7 @@ def bidder_home():
                       AND LOWER(TRIM(b_exists.bidder_email)) = LOWER(TRIM(?))
                 )
                 ORDER BY al.status ASC, al.listing_ID DESC
-            """, (email, email)).fetchall()
+            """, (email, email, email, email)).fetchall()
 
             notifications = con.execute(
                 """
@@ -941,9 +953,13 @@ def search(category=None):
             query = """
                 SELECT al.listing_ID, al.auction_title, al.product_name,
                        al.seller_email, al.reserve_price, al.category,
-                       COUNT(b.bid_ID) AS bid_count,
+                       COUNT(DISTINCT b.bid_ID) AS bid_count,
                        MAX(b.bid_price) AS highest_bid,
                        al.max_bids,
+                       
+                       ROUND(AVG(r.rating), 1) AS seller_rating,
+                       COUNT(r.rating) AS rating_count,
+                       
                        MAX(
                            CASE
                                WHEN LOWER(TRIM(w.{})) = LOWER(TRIM(?)) THEN 1
@@ -953,6 +969,8 @@ def search(category=None):
                 FROM Auction_Listing al
                 LEFT JOIN Bid b ON al.listing_ID = b.listing_ID
                 LEFT JOIN Wishlist w ON al.listing_ID = w.listing_ID
+                LEFT JOIN Rating r
+                    ON LOWER(TRIM(r.seller_email)) = LOWER(TRIM(al.seller_email))
                 WHERE al.status = 1
             """.format(wishlist_email_col)
             params = [current_email]
@@ -1078,6 +1096,7 @@ def product_page(listing_id):
         wishlisted=wishlisted,
         wishlist_feedback=wishlist_feedback,
     )
+
 
 
 @app.route('/wishlist/<int:listing_id>', methods=['POST'])
@@ -1755,6 +1774,136 @@ def profile():
 
     return render_template("profile.html", user=profile_data, roles=roles, message=message, error=error)
 
+
+@app.route("/seller/<path:seller_email>")
+def seller_profile(seller_email):
+    if "email" not in session:
+        session["login_error"] = "Please log in first."
+        return redirect(url_for("login"))
+
+    error = None
+    seller = None
+    ratings = []
+
+    try:
+        with get_connection() as con:
+            initialize_schema_if_needed(con)
+
+            seller = con.execute("""
+                SELECT
+                    s.email,
+                    ROUND(AVG(r.rating), 1) AS avg_rating,
+                    COUNT(r.rating) AS rating_count
+                FROM Seller s
+                LEFT JOIN Rating r
+                    ON LOWER(TRIM(r.seller_email)) = LOWER(TRIM(s.email))
+                WHERE LOWER(TRIM(s.email)) = LOWER(TRIM(?))
+                GROUP BY s.email
+            """, (seller_email,)).fetchone()
+
+            ratings = con.execute("""
+                SELECT bidder_email, rating, rating_desc
+                FROM Rating
+                WHERE LOWER(TRIM(seller_email)) = LOWER(TRIM(?))
+                ORDER BY rating DESC
+            """, (seller_email,)).fetchall()
+
+    except sql.Error as e:
+        print("DB error in seller_profile:", e)
+        error = "Database error while loading seller profile."
+
+    return render_template(
+        "seller_profile.html",
+        seller=seller,
+        ratings=ratings,
+        error=error,
+    )
+
+@app.route("/rate/<int:listing_id>", methods=["GET", "POST"])
+def rate_seller(listing_id):
+    if "email" not in session or session.get("role") != "Bidder":
+        session["login_error"] = "You must be logged in as a bidder to rate a seller."
+        return redirect(url_for("login"))
+
+    bidder_email = session["email"].strip().lower()
+    error = None
+    message = None
+    listing = None
+
+    try:
+        with get_connection() as con:
+            initialize_schema_if_needed(con)
+
+            # checks transact table to make sure that bidder won and paid
+            listing = con.execute("""
+                SELECT
+                    t.listing_ID,
+                    t.bidder_email,
+                    t.seller_email,
+                    t.payment,
+                    al.auction_title
+                FROM Transact t
+                JOIN Auction_Listing al
+                    ON al.listing_ID = t.listing_ID
+                WHERE t.listing_ID = ?
+                  AND LOWER(TRIM(t.bidder_email)) = LOWER(TRIM(?))
+            """, (listing_id, bidder_email)).fetchone()
+
+            if not listing:
+                error = "You can only rate sellers for auctions you won and paid for."
+                return render_template("rate_seller.html", listing=None, error=error, message=message)
+
+
+            # checks if user already created a rating
+            existing_rating = con.execute("""
+                SELECT 1
+                FROM Rating
+                WHERE listing_ID = ?
+                  AND LOWER(TRIM(bidder_email)) = LOWER(TRIM(?))
+            """, (listing_id, bidder_email)).fetchone()
+
+
+            if existing_rating:
+                error = "You have already rated this seller for this auction."
+                return render_template("rate_seller.html", listing=listing, error=error, message=message)
+
+
+            if request.method == "POST":
+                rating_raw = request.form.get("rating", "").strip()
+                rating_desc = request.form.get("rating_desc", "").strip()
+
+                if not rating_raw:
+                    error = "Please select a rating."
+                else:
+                    try:
+                        rating_value = int(rating_raw)
+                    except ValueError:
+                        error = "Rating must be a number from 1 to 5."
+                    else:
+                        if rating_value < 1 or rating_value > 5:
+                            error = "Rating must be between 1 and 5."
+                        else: # insert rating into db
+                            date = datetime.now().strftime("%m/%d/%Y")
+                            con.execute("""
+                                INSERT INTO Rating (listing_ID, bidder_email, seller_email, rating, rating_desc, date)
+                                VALUES (?, ?, ?, ?, ?, ?) 
+                            """, (
+                                listing_id,
+                                bidder_email,
+                                listing["seller_email"],
+                                rating_value,
+                                rating_desc if rating_desc else None,
+                                date
+                            ))
+                            con.commit()
+                            message = "Rating submitted successfully."
+
+
+    except sql.Error as e:
+        print("DB error in rate_seller:", e)
+        error = "Database error while submitting rating."
+
+    return render_template("rate_seller.html", listing=listing, error=error, message=message)
 @app.route("/seller_products", methods=["GET", "POST"])
 def seller_products():
     if "email" not in session or session.get("role") != "Seller":
