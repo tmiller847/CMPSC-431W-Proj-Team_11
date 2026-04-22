@@ -185,7 +185,7 @@
             <p>
                 <strong>Average Rating:</strong>
                 {% if seller['avg_rating'] %}
-                    <span class="rating-highlight">⭐ {{ seller['avg_rating'] }}/5</span>
+                    <span class="rating-highlight"> {{ seller['avg_rating'] }}/5.0</span>
                     ({{ seller['rating_count'] }} review{% if seller['rating_count'] != 1 %}s{% endif %})
                 {% else %}
                     No ratings yet

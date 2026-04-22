@@ -284,7 +284,17 @@
                         <p><strong>Wishlist:</strong> In your wishlist</p>
                     {% endif %}
                     <p><strong>Category:</strong> {{ p['category'] }}</p>
-                    <p><strong>Seller:</strong> {{ p['seller_email'] }}</p>
+                   <p>
+                        <strong>Seller:</strong>
+                        <a href="/seller/{{ p['seller_email'] }}">
+                            {{ p['seller_email'] }}
+                        </a>
+                    </p>
+                    {% if p['seller_rating'] is not none %}
+                        <p><strong>Seller Rating:</strong> {{ p['seller_rating'] }} / 5.0 ({{ p['rating_count'] }} review{% if p['rating_count'] != 1 %}s{% endif %})</p>
+                    {% else %}
+                        <p><strong>Seller Rating:</strong> No ratings yet</p>
+                    {% endif %}
                     {% if p['highest_bid'] %}
                         <p><strong>Highest Bid:</strong> ${{ p['highest_bid'] }}</p>
                     {% else %}
