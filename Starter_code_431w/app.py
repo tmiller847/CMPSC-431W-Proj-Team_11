@@ -270,6 +270,14 @@ def parse_datetime_local_input(value):
 
 
 def ensure_runtime_schema(connection):
+    user_columns = {
+        row["name"].strip().lower()
+        for row in connection.execute("PRAGMA table_info(User)").fetchall()
+    }
+    if "is_active" not in user_columns:
+        connection.execute("ALTER TABLE User ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
+    connection.execute("UPDATE User SET is_active = 1 WHERE is_active IS NULL")
+
     listing_columns = {
         row["name"]
         for row in connection.execute("PRAGMA table_info(Auction_Listing)").fetchall()
@@ -676,11 +684,18 @@ def login():
                     hashed_pw = hash_password(password)
 
                     user = connection.execute(
-                        "SELECT email FROM User WHERE LOWER(TRIM(email)) = ? AND password = ?",
+                        """
+                        SELECT email, is_active
+                        FROM User
+                        WHERE LOWER(TRIM(email)) = ? AND password = ?
+                        """,
                         (normalized_email, hashed_pw),
                     ).fetchone()
 
                     if user:
+                        if user["is_active"] == 0:
+                            error = "This account is inactive. Please sign up again to reactivate."
+                            return render_template('login.html', error=error)
                         email = user["email"]
                         roles = []
 
@@ -2110,6 +2125,52 @@ def profile():
             profile_data, roles = build_profile_data(con, email)
 
             if request.method == "POST":
+                action = request.form.get("action", "save_profile").strip().lower()
+                if action == "inactivate_account":
+                    con.execute(
+                        """
+                        UPDATE User
+                        SET is_active = 0
+                        WHERE LOWER(TRIM(email)) = ?
+                        """,
+                        (email,),
+                    )
+
+                    if "Seller" in roles:
+                        con.execute(
+                            """
+                            UPDATE Auction_Listing
+                            SET status = 0
+                            WHERE LOWER(TRIM(seller_email)) = LOWER(TRIM(?))
+                            """,
+                            (email,),
+                        )
+
+                    if "HelpDesk" in roles:
+                        con.execute(
+                            """
+                            UPDATE Request
+                            SET request_status = 0, helpdesk_staff_email = ?
+                            WHERE LOWER(TRIM(helpdesk_staff_email)) = LOWER(TRIM(?))
+                              AND request_status IN (0, 1)
+                            """,
+                            (HELPDESK_QUEUE_EMAIL, email),
+                        )
+                        con.execute(
+                            """
+                            DELETE FROM Helpdesk_Active_Session
+                            WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))
+                            """,
+                            (email,),
+                        )
+
+                    con.commit()
+                    session.clear()
+                    session["login_error"] = (
+                        "Account inactivated successfully. Please sign up again to reactivate."
+                    )
+                    return redirect(url_for("signup"))
+
                 password = request.form.get("password", "").strip()
 
                 if "Bidder" in roles:
