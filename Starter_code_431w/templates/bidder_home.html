@@ -8,9 +8,9 @@
     <title>Bidder Dashboard</title>
     <style>
         html, body {
-            height: 100%;
+            min-height: 100%;
             margin: 0;
-            overflow: hidden;
+            overflow-y: auto;
         }
         
         body {
@@ -144,6 +144,68 @@
     </div>
 
     <h2>Your Auctions</h2>
+
+    {% if notifications %}
+        <h2>Notifications</h2>
+        <table>
+            <tr>
+                <th>Time</th>
+                <th>Message</th>
+                <th>Action</th>
+            </tr>
+            {% for n in notifications %}
+                <tr>
+                    <td>{{ n['created_at'] }}</td>
+                    <td>{{ n['message'] }}</td>
+                    <td>
+                        {% if n['can_pay'] %}
+                            <a href="/pay/{{ n['listing_ID'] }}">Pay</a>
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+        </table>
+    {% endif %}
+
+    <h2>Your Wishlist</h2>
+    {% if wishlist_items %}
+        <table>
+            <tr>
+                <th>Title</th>
+                <th>Seller</th>
+                <th>Status</th>
+                <th>Highest Bid</th>
+                <th>End Time</th>
+                <th>Action</th>
+            </tr>
+            {% for w in wishlist_items %}
+                <tr>
+                    <td><a href="/product/{{ w['listing_ID'] }}">{{ w['auction_title'] }}</a></td>
+                    <td>{{ w['seller_email'] }}</td>
+                    <td>
+                        {% if w['status'] == 1 %}Active
+                        {% elif w['status'] == 2 %}Sold
+                        {% elif w['status'] == 3 %}Awaiting seller decision
+                        {% else %}Inactive
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if w['highest_bid'] %}
+                            ${{ w['highest_bid'] }}
+                        {% else %}
+                            No bids yet
+                        {% endif %}
+                    </td>
+                    <td>{{ w['end_time'] or "N/A" }}</td>
+                    <td><a href="/product/{{ w['listing_ID'] }}">View</a></td>
+                </tr>
+            {% endfor %}
+        </table>
+    {% else %}
+        <p class="empty">No items in your wishlist.</p>
+    {% endif %}
 
     {% if auctions %}
         <table>

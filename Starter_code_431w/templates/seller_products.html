@@ -231,6 +231,9 @@
         <label>Max Bids</label>
         <input type="number" name="max_bids" required>
 
+        <label>Auction End Time</label>
+        <input type="datetime-local" name="end_time" required>
+
         <button class="create_listing_button">Create Listing</button>
     </form>
 
@@ -243,6 +246,7 @@
                 <th>Category</th>
                 <th>Reserve Price</th>
                 <th>Max Bids</th>
+                <th>End Time</th>
                 <th>Status</th>
                 <th>Actions</th>
             </tr>
@@ -253,6 +257,7 @@
                 <td>{{ product.category }}</td>
                 <td>${{ product.reserve_price }}</td>
                 <td>{{ product.max_bids }}</td>
+                <td>{{ product.end_time or "N/A" }}</td>
                 <td>{{ product.status }}</td>
                 <td>
                     <form method="POST" action="{{ url_for('seller_products') }}" class="inline-form">

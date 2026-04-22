@@ -223,6 +223,10 @@
 <div class="search-box">
     <h1>Browse &amp; Search</h1>
 
+    {% if wishlist_feedback %}
+        <p class="result-label">{{ wishlist_feedback }}</p>
+    {% endif %}
+
     {% if error %}
         <p class="error">{{ error }}</p>
     {% endif %}
@@ -276,6 +280,9 @@
             {% for p in products %}
                 <div>
                     <h3><a href="/product/{{ p['listing_ID'] }}">{{ p['auction_title'] }}</a></h3>
+                    {% if role == "Bidder" and p['wishlisted'] %}
+                        <p><strong>Wishlist:</strong> In your wishlist</p>
+                    {% endif %}
                     <p><strong>Category:</strong> {{ p['category'] }}</p>
                     <p><strong>Seller:</strong> {{ p['seller_email'] }}</p>
                     {% if p['highest_bid'] %}
@@ -285,6 +292,18 @@
                     {% endif %}
                     <p><strong>Bids:</strong> {{ p['bid_count'] }} / {{ p['max_bids'] }}</p>
                     <p>{{ p['product_name'] }}</p>
+                    {% if role == "Bidder" %}
+                        <form method="POST" action="/wishlist/{{ p['listing_ID'] }}">
+                            <input type="hidden" name="next" value="{{ search_return_url }}">
+                            {% if p['wishlisted'] %}
+                                <input type="hidden" name="action" value="remove">
+                                <button type="submit">Remove from Wishlist</button>
+                            {% else %}
+                                <input type="hidden" name="action" value="add">
+                                <button type="submit">Add to Wishlist</button>
+                            {% endif %}
+                        </form>
+                    {% endif %}
                 </div>
                 <hr>
             {% endfor %}

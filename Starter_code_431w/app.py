@@ -3,6 +3,7 @@ from pathlib import Path
 import sqlite3 as sql
 import hashlib
 from uuid import uuid4
+from datetime import datetime
 
 from flask import Flask, render_template, request, session, redirect, url_for
 
@@ -194,21 +195,316 @@ def get_connection():
     return connection
 
 
+def current_db_timestamp():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def parse_datetime_local_input(value):
+    try:
+        parsed = datetime.fromisoformat(value.strip())
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return parsed.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def ensure_runtime_schema(connection):
+    listing_columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(Auction_Listing)").fetchall()
+    }
+    if "start_time" not in listing_columns:
+        connection.execute("ALTER TABLE Auction_Listing ADD COLUMN start_time TEXT")
+    if "end_time" not in listing_columns:
+        connection.execute("ALTER TABLE Auction_Listing ADD COLUMN end_time TEXT")
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS Auction_Notification (
+            notification_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            listing_ID INTEGER NOT NULL,
+            bidder_email TEXT NOT NULL,
+            seller_email TEXT NOT NULL,
+            winner_email TEXT,
+            highest_bid INTEGER,
+            can_pay INTEGER NOT NULL DEFAULT 0,
+            message TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(listing_ID, bidder_email)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS Bidder_Notification (
+            notification_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            listing_ID INTEGER NOT NULL,
+            bidder_email TEXT NOT NULL,
+            seller_email TEXT,
+            winner_email TEXT,
+            highest_bid INTEGER,
+            can_pay INTEGER NOT NULL DEFAULT 0,
+            notification_type TEXT NOT NULL,
+            message TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS Wishlist (
+            wishlist_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            listing_ID INTEGER NOT NULL,
+            email TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(listing_ID, email)
+        )
+        """
+    )
+    connection.commit()
+
+
+def get_wishlist_email_column(connection):
+    columns = {
+        row["name"].strip().lower()
+        for row in connection.execute("PRAGMA table_info(Wishlist)").fetchall()
+    }
+    if "bidder_email" in columns:
+        return "bidder_email"
+    if "email" in columns:
+        return "email"
+    return "email"
+
+
+def wishlist_has_created_at(connection):
+    columns = {
+        row["name"].strip().lower()
+        for row in connection.execute("PRAGMA table_info(Wishlist)").fetchall()
+    }
+    return "created_at" in columns
+
+
+def create_bidder_notification(
+    connection,
+    listing_id,
+    bidder_email,
+    seller_email,
+    winner_email,
+    highest_bid,
+    can_pay,
+    notification_type,
+    message,
+    created_at=None,
+):
+    connection.execute(
+        """
+        INSERT INTO Bidder_Notification
+        (listing_ID, bidder_email, seller_email, winner_email, highest_bid, can_pay, notification_type, message, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            listing_id,
+            bidder_email,
+            seller_email,
+            winner_email,
+            highest_bid,
+            can_pay,
+            notification_type,
+            message,
+            created_at or current_db_timestamp(),
+        ),
+    )
+
+
+def notify_wishlisters_on_bid(connection, listing_id, seller_email, bid_price, triggering_bidder):
+    wishlist_email_col = get_wishlist_email_column(connection)
+    wishlisters = connection.execute(
+        f"""
+        SELECT DISTINCT w.{wishlist_email_col} AS wishlist_email
+        FROM Wishlist w
+        WHERE w.listing_ID = ?
+          AND LOWER(TRIM(w.{wishlist_email_col})) <> LOWER(TRIM(?))
+          AND NOT EXISTS (
+              SELECT 1
+              FROM Bid b
+              WHERE b.listing_ID = w.listing_ID
+                AND LOWER(TRIM(b.bidder_email)) = LOWER(TRIM(w.{wishlist_email_col}))
+          )
+        """,
+        (listing_id, triggering_bidder),
+    ).fetchall()
+
+    for row in wishlisters:
+        create_bidder_notification(
+            connection=connection,
+            listing_id=listing_id,
+            bidder_email=row["wishlist_email"],
+            seller_email=seller_email,
+            winner_email=None,
+            highest_bid=int(bid_price),
+            can_pay=0,
+            notification_type="wishlist_bid",
+            message=f"Wishlist update: Auction #{listing_id} has a new bid of ${float(bid_price):.2f}.",
+        )
+
+
+def notify_wishlisters_on_sale(connection, listing_id, seller_email, winner_email, highest_bid):
+    wishlist_email_col = get_wishlist_email_column(connection)
+    wishlisters = connection.execute(
+        f"""
+        SELECT DISTINCT w.{wishlist_email_col} AS wishlist_email
+        FROM Wishlist w
+        WHERE w.listing_ID = ?
+          AND NOT EXISTS (
+              SELECT 1
+              FROM Bid b
+              WHERE b.listing_ID = w.listing_ID
+                AND LOWER(TRIM(b.bidder_email)) = LOWER(TRIM(w.{wishlist_email_col}))
+          )
+        """,
+        (listing_id,),
+    ).fetchall()
+
+    amount_text = f"${float(highest_bid):.2f}" if highest_bid is not None else "N/A"
+    for row in wishlisters:
+        create_bidder_notification(
+            connection=connection,
+            listing_id=listing_id,
+            bidder_email=row["wishlist_email"],
+            seller_email=seller_email,
+            winner_email=winner_email,
+            highest_bid=highest_bid,
+            can_pay=0,
+            notification_type="wishlist_sold",
+            message=f"Wishlist update: Auction #{listing_id} has been sold at {amount_text}.",
+        )
+
+
+def notify_bidders_auction_end(connection, listing_id, seller_email, winner_email, highest_bid, sold):
+    bidder_rows = connection.execute(
+        """
+        SELECT DISTINCT bidder_email
+        FROM Bid
+        WHERE listing_ID = ?
+        """,
+        (listing_id,),
+    ).fetchall()
+
+    for bidder_row in bidder_rows:
+        bidder_email = bidder_row["bidder_email"]
+        bidder_is_winner = bool(
+            sold
+            and winner_email
+            and bidder_email.strip().lower() == winner_email.strip().lower()
+        )
+
+        if sold:
+            message = (
+                f"Auction #{listing_id} ended. Highest bid: ${float(highest_bid):.2f}. "
+                + (
+                    "You won this auction. You may now complete payment."
+                    if bidder_is_winner
+                    else f"Winner: {winner_email}."
+                )
+            )
+        else:
+            highest_text = "No bids were placed."
+            if highest_bid is not None:
+                highest_text = f"Highest bid: ${float(highest_bid):.2f} (reserve not met)."
+            message = (
+                f"Auction #{listing_id} ended without a sale. "
+                f"{highest_text} Seller decision is pending."
+            )
+
+        create_bidder_notification(
+            connection=connection,
+            listing_id=listing_id,
+            bidder_email=bidder_email,
+            seller_email=seller_email,
+            winner_email=winner_email,
+            highest_bid=highest_bid,
+            can_pay=1 if bidder_is_winner else 0,
+            notification_type="auction_end",
+            message=message,
+        )
+
+
+def close_expired_auctions(connection):
+    now_ts = current_db_timestamp()
+    expired_rows = connection.execute(
+        """
+        SELECT listing_ID, seller_email, reserve_price
+        FROM Auction_Listing
+        WHERE status = 1
+          AND end_time IS NOT NULL
+          AND TRIM(end_time) <> ''
+          AND end_time <= ?
+        """,
+        (now_ts,),
+    ).fetchall()
+
+    for row in expired_rows:
+        listing_id = row["listing_ID"]
+        reserve_price = parse_reserve_price(row["reserve_price"])
+
+        top_bid = connection.execute(
+            """
+            SELECT bidder_email, bid_price
+            FROM Bid
+            WHERE listing_ID = ?
+            ORDER BY bid_price DESC, bid_ID ASC
+            LIMIT 1
+            """,
+            (listing_id,),
+        ).fetchone()
+
+        highest_bid = top_bid["bid_price"] if top_bid else None
+        winner_email = top_bid["bidder_email"] if top_bid else None
+        sold = highest_bid is not None and highest_bid >= reserve_price
+        new_status = 2 if sold else 3
+
+        connection.execute(
+            "UPDATE Auction_Listing SET status = ? WHERE listing_ID = ? AND status = 1",
+            (new_status, listing_id),
+        )
+
+        notify_bidders_auction_end(
+            connection,
+            listing_id,
+            row["seller_email"],
+            winner_email,
+            highest_bid,
+            sold,
+        )
+
+        if sold:
+            notify_wishlisters_on_sale(
+                connection,
+                listing_id,
+                row["seller_email"],
+                winner_email,
+                highest_bid,
+            )
+
+    if expired_rows:
+        connection.commit()
+
+
 def initialize_schema_if_needed(connection):
     user_table = connection.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='User'"
     ).fetchone()
-    if user_table:
-        return
+    if not user_table:
+        if not SCHEMA_PATH.exists():
+            raise FileNotFoundError(
+                f"Schema file not found at {SCHEMA_PATH}. Cannot initialize database."
+            )
 
-    if not SCHEMA_PATH.exists():
-        raise FileNotFoundError(
-            f"Schema file not found at {SCHEMA_PATH}. Cannot initialize database."
-        )
+        schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
+        connection.executescript(schema_sql)
+        connection.commit()
 
-    schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
-    connection.executescript(schema_sql)
-    connection.commit()
+    ensure_runtime_schema(connection)
+    close_expired_auctions(connection)
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -327,26 +623,85 @@ def bidder_home():
 
     email = session["email"]
     auctions = []
+    notifications = []
+    wishlist_items = []
 
     try:
         with get_connection() as con:
+            initialize_schema_if_needed(con)
+            wishlist_email_col = get_wishlist_email_column(con)
             auctions = con.execute("""
-                SELECT al.listing_ID, al.auction_title, al.seller_email,
+                SELECT al.listing_ID, al.auction_title, al.seller_email, al.end_time,
                        al.status, al.max_bids,
-                       COUNT(b.bid_ID) AS bid_count,
-                       MAX(b.bid_price) AS highest_bid,
-                       MAX(CASE WHEN LOWER(TRIM(b.bidder_email)) = LOWER(TRIM(?))
-                                THEN b.bid_price END) AS my_highest_bid
+                       (
+                           SELECT COUNT(*)
+                           FROM Bid b_count
+                           WHERE b_count.listing_ID = al.listing_ID
+                       ) AS bid_count,
+                       (
+                           SELECT MAX(b_highest.bid_price)
+                           FROM Bid b_highest
+                           WHERE b_highest.listing_ID = al.listing_ID
+                       ) AS highest_bid,
+                       (
+                           SELECT MAX(b_my.bid_price)
+                           FROM Bid b_my
+                           WHERE b_my.listing_ID = al.listing_ID
+                             AND LOWER(TRIM(b_my.bidder_email)) = LOWER(TRIM(?))
+                       ) AS my_highest_bid
                 FROM Auction_Listing al
-                JOIN Bid b ON al.listing_ID = b.listing_ID
-                WHERE LOWER(TRIM(b.bidder_email)) = LOWER(TRIM(?))
-                GROUP BY al.listing_ID
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM Bid b_exists
+                    WHERE b_exists.listing_ID = al.listing_ID
+                      AND LOWER(TRIM(b_exists.bidder_email)) = LOWER(TRIM(?))
+                )
                 ORDER BY al.status ASC, al.listing_ID DESC
             """, (email, email)).fetchall()
+
+            notifications = con.execute(
+                """
+                SELECT bn.listing_ID, bn.message, bn.can_pay, bn.created_at
+                FROM Bidder_Notification bn
+                WHERE LOWER(TRIM(bn.bidder_email)) = LOWER(TRIM(?))
+                  AND NOT (
+                      bn.notification_type IN ('wishlist_bid', 'wishlist_sold')
+                      AND EXISTS (
+                          SELECT 1
+                          FROM Bid b
+                          WHERE b.listing_ID = bn.listing_ID
+                            AND LOWER(TRIM(b.bidder_email)) = LOWER(TRIM(bn.bidder_email))
+                      )
+                  )
+                ORDER BY notification_id DESC
+                LIMIT 20
+                """,
+                (email,),
+            ).fetchall()
+
+            wishlist_items = con.execute(
+                f"""
+                SELECT al.listing_ID, al.auction_title, al.seller_email, al.status, al.end_time,
+                       MAX(b.bid_price) AS highest_bid
+                FROM Wishlist w
+                JOIN Auction_Listing al ON al.listing_ID = w.listing_ID
+                LEFT JOIN Bid b ON b.listing_ID = al.listing_ID
+                WHERE LOWER(TRIM(w.{wishlist_email_col})) = LOWER(TRIM(?))
+                GROUP BY al.listing_ID
+                ORDER BY al.status ASC, al.listing_ID DESC
+                """,
+                (email,),
+            ).fetchall()
     except sql.Error as e:
         print("DB error in bidder_home:", e)
 
-    return render_template("bidder_home.html", email=email, auctions=auctions)
+    return render_template(
+        "bidder_home.html",
+        email=email,
+        auctions=auctions,
+        notifications=notifications,
+        wishlist_items=wishlist_items,
+    )
 
 
 @app.route('/seller_home')
@@ -376,13 +731,17 @@ def search(category=None):
     subcategories = []
     products = []
     breadcrumb = [] # build breadcrumb to track user's path
+    wishlist_feedback = session.pop("wishlist_feedback", None)
     keyword = request.args.get('keyword', '').strip()
     min_price = request.args.get('min_price', '').strip()
     max_price = request.args.get('max_price', '').strip()
     is_search = bool(keyword or min_price or max_price)
+    current_email = session.get("email", "")
 
     try:
         with get_connection() as con:
+            initialize_schema_if_needed(con)
+            wishlist_email_col = get_wishlist_email_column(con)
             if category is None:
                 subcategories = con.execute("""
                     SELECT category_name FROM Category
@@ -427,12 +786,19 @@ def search(category=None):
                        al.seller_email, al.reserve_price, al.category,
                        COUNT(b.bid_ID) AS bid_count,
                        MAX(b.bid_price) AS highest_bid,
-                       al.max_bids
+                       al.max_bids,
+                       MAX(
+                           CASE
+                               WHEN LOWER(TRIM(w.{})) = LOWER(TRIM(?)) THEN 1
+                               ELSE 0
+                           END
+                       ) AS wishlisted
                 FROM Auction_Listing al
                 LEFT JOIN Bid b ON al.listing_ID = b.listing_ID
+                LEFT JOIN Wishlist w ON al.listing_ID = w.listing_ID
                 WHERE al.status = 1
-            """
-            params = []
+            """.format(wishlist_email_col)
+            params = [current_email]
 
 
 
@@ -479,6 +845,8 @@ def search(category=None):
         min_price=min_price,
         max_price=max_price,
         is_search=is_search,
+        wishlist_feedback=wishlist_feedback,
+        search_return_url=request.full_path,
     )
 
 @app.route('/product/<int:listing_id>')
@@ -493,9 +861,13 @@ def product_page(listing_id):
     bid_count = 0
     highest_bid = None
     remaining_bids = 0
+    wishlisted = False
+    wishlist_feedback = session.pop("wishlist_feedback", None)
 
     try:
         with get_connection() as connection:
+            initialize_schema_if_needed(connection)
+            wishlist_email_col = get_wishlist_email_column(connection)
             product = connection.execute("""
                 SELECT listing_ID, auction_title, product_name, product_description,
                        category, seller_email, quantity, reserve_price, max_bids, status
@@ -524,6 +896,17 @@ def product_page(listing_id):
             highest_bid = highest_bid_row["highest_bid"] if highest_bid_row else None
             remaining_bids = product["max_bids"] - bid_count
 
+            wishlisted_row = connection.execute(
+                f"""
+                SELECT 1
+                FROM Wishlist
+                WHERE listing_ID = ?
+                  AND LOWER(TRIM({wishlist_email_col})) = LOWER(TRIM(?))
+                """,
+                (listing_id, session["email"]),
+            ).fetchone()
+            wishlisted = bool(wishlisted_row)
+
     except sql.Error as e:
         print("Database error:", e)
         error = "Database error while loading product."
@@ -534,8 +917,72 @@ def product_page(listing_id):
         bid_count=bid_count,
         highest_bid=highest_bid,
         remaining_bids=remaining_bids,
-        error=error
+        error=error,
+        wishlisted=wishlisted,
+        wishlist_feedback=wishlist_feedback,
     )
+
+
+@app.route('/wishlist/<int:listing_id>', methods=['POST'])
+def toggle_wishlist(listing_id):
+    if "email" not in session or session.get("role") != "Bidder":
+        session['login_error'] = 'You must be a Bidder to use wishlist.'
+        return redirect(url_for("login"))
+
+    bidder_email = session["email"]
+    action = request.form.get("action", "").strip().lower()
+    next_url = request.form.get("next", "").strip()
+    wishlist_feedback = None
+
+    try:
+        with get_connection() as con:
+            initialize_schema_if_needed(con)
+            wishlist_email_col = get_wishlist_email_column(con)
+            listing = con.execute(
+                "SELECT listing_ID FROM Auction_Listing WHERE listing_ID = ?",
+                (listing_id,),
+            ).fetchone()
+            if not listing:
+                wishlist_feedback = "Listing not found."
+            elif action == "add":
+                if wishlist_has_created_at(con):
+                    con.execute(
+                        f"""
+                        INSERT OR IGNORE INTO Wishlist (listing_ID, {wishlist_email_col}, created_at)
+                        VALUES (?, ?, ?)
+                        """,
+                        (listing_id, bidder_email, current_db_timestamp()),
+                    )
+                else:
+                    con.execute(
+                        f"""
+                        INSERT OR IGNORE INTO Wishlist (listing_ID, {wishlist_email_col})
+                        VALUES (?, ?)
+                        """,
+                        (listing_id, bidder_email),
+                    )
+                con.commit()
+                wishlist_feedback = "Added to wishlist."
+            elif action == "remove":
+                con.execute(
+                    f"""
+                    DELETE FROM Wishlist
+                    WHERE listing_ID = ?
+                      AND LOWER(TRIM({wishlist_email_col})) = LOWER(TRIM(?))
+                    """,
+                    (listing_id, bidder_email),
+                )
+                con.commit()
+                wishlist_feedback = "Removed from wishlist."
+            else:
+                wishlist_feedback = "Invalid wishlist action."
+    except sql.Error:
+        wishlist_feedback = "Could not update wishlist due to a database error."
+
+    session["wishlist_feedback"] = wishlist_feedback
+    if next_url.startswith("/"):
+        return redirect(next_url)
+    return redirect(url_for("product_page", listing_id=listing_id))
 
 
 
@@ -553,9 +1000,10 @@ def bid_page(listing_id):
 
     try:
         with get_connection() as con:
+            initialize_schema_if_needed(con)
             listing = con.execute("""
                 SELECT listing_ID, auction_title, product_name, seller_email,
-                       reserve_price, max_bids, status
+                       reserve_price, max_bids, status, end_time
                 FROM Auction_Listing
                 WHERE listing_ID = ?
             """, (listing_id,)).fetchone()
@@ -572,6 +1020,18 @@ def bid_page(listing_id):
             ).fetchone()
             highest_bid = highest_bid_row[0] if highest_bid_row[0] is not None else 0
 
+            previous_top_bidder_row = con.execute(
+                """
+                SELECT bidder_email, bid_price
+                FROM Bid
+                WHERE listing_ID = ?
+                ORDER BY bid_price DESC, bid_ID DESC
+                LIMIT 1
+                """,
+                (listing_id,),
+            ).fetchone()
+            previous_top_bidder = previous_top_bidder_row["bidder_email"] if previous_top_bidder_row else None
+
             last_bidder_row = con.execute(
                 "SELECT bidder_email FROM Bid WHERE listing_ID = ? ORDER BY bid_ID DESC LIMIT 1",
                 (listing_id,)
@@ -586,6 +1046,8 @@ def bid_page(listing_id):
             pre_errors = []
             if listing["status"] != 1:
                 pre_errors.append("This auction is not active.")
+            if listing["end_time"] and listing["end_time"] <= current_db_timestamp():
+                pre_errors.append("This auction has ended (end time reached).")
             if listing["seller_email"].strip().lower() == bidder_email.strip().lower():
                 pre_errors.append("You cannot bid on your own listing.")
             if remaining_bids <= 0:
@@ -618,6 +1080,40 @@ def bid_page(listing_id):
                                 INSERT INTO Bid (seller_email, listing_ID, bidder_email, bid_price)
                                 VALUES (?, ?, ?, ?)
                             """, (listing["seller_email"], listing_id, bidder_email, int(input_bid)))
+
+                            notify_wishlisters_on_bid(
+                                con,
+                                listing_id,
+                                listing["seller_email"],
+                                input_bid,
+                                bidder_email,
+                            )
+
+                            # Notify prior highest bidder that they were outbid.
+                            if previous_top_bidder and previous_top_bidder.strip().lower() != bidder_email.strip().lower():
+                                create_bidder_notification(
+                                    connection=con,
+                                    listing_id=listing_id,
+                                    bidder_email=previous_top_bidder,
+                                    seller_email=listing["seller_email"],
+                                    winner_email=None,
+                                    highest_bid=int(input_bid),
+                                    can_pay=0,
+                                    notification_type="outbid",
+                                    message=f"You were outbid on auction #{listing_id}. New highest bid is ${float(input_bid):.2f}.",
+                                )
+
+                            # If this bidder had wishlist notifications for this listing,
+                            # remove them now that they are an active bidder.
+                            con.execute(
+                                """
+                                DELETE FROM Bidder_Notification
+                                WHERE listing_ID = ?
+                                  AND LOWER(TRIM(bidder_email)) = LOWER(TRIM(?))
+                                  AND notification_type IN ('wishlist_bid', 'wishlist_sold')
+                                """,
+                                (listing_id, bidder_email),
+                            )
                             con.commit()
                             bid_accepted = True
                             bid_count += 1
@@ -631,6 +1127,21 @@ def bid_page(listing_id):
                                         "UPDATE Auction_Listing SET status = 2 WHERE listing_ID = ?",
                                         (listing_id,)
                                     )
+                                    notify_bidders_auction_end(
+                                        con,
+                                        listing_id,
+                                        listing["seller_email"],
+                                        bidder_email,
+                                        highest_bid,
+                                        True,
+                                    )
+                                    notify_wishlisters_on_sale(
+                                        con,
+                                        listing_id,
+                                        listing["seller_email"],
+                                        bidder_email,
+                                        highest_bid,
+                                    )
                                     con.commit()
 
                                     feedback = ("winner",
@@ -641,6 +1152,14 @@ def bid_page(listing_id):
                                     con.execute(
                                         "UPDATE Auction_Listing SET status = 3 WHERE listing_ID = ?",
                                         (listing_id,)
+                                    )
+                                    notify_bidders_auction_end(
+                                        con,
+                                        listing_id,
+                                        listing["seller_email"],
+                                        None,
+                                        highest_bid,
+                                        False,
                                     )
                                     con.commit()
 
@@ -653,7 +1172,7 @@ def bid_page(listing_id):
 
             listing = con.execute("""
                 SELECT listing_ID, auction_title, product_name, seller_email,
-                       reserve_price, max_bids, status
+                       reserve_price, max_bids, status, end_time
                 FROM Auction_Listing
                 WHERE listing_ID = ?
             """, (listing_id,)).fetchone()
@@ -688,6 +1207,7 @@ def payment_page(listing_id):
 
     try:
         with get_connection() as con:
+            initialize_schema_if_needed(con)
             listing = con.execute("""
                 SELECT listing_ID, auction_title, seller_email, max_bids
                 FROM Auction_Listing
@@ -695,7 +1215,7 @@ def payment_page(listing_id):
             """, (listing_id,)).fetchone()
 
             if not listing:
-                return render_template("pay.html", error="Listing not found or not yet sold.", listing=None)
+                return render_template("payment.html", error="Listing not found or not yet sold.", listing=None)
 
             # confirm that bidder has the highest bid
             winner_row = con.execute("""
@@ -705,8 +1225,38 @@ def payment_page(listing_id):
             """, (listing_id,)).fetchone()
 
             if not winner_row or winner_row["bidder_email"].strip().lower() != bidder_email.strip().lower():
-                return render_template("pay.html", error="You are not the winner of this auction.", listing=None)
+                return render_template("payment.html", error="You are not the winner of this auction.", listing=None)
             winning_price = winner_row["winning_price"]
+
+            winner_notification = con.execute(
+                """
+                SELECT notification_id
+                FROM Bidder_Notification
+                WHERE listing_ID = ?
+                  AND LOWER(TRIM(bidder_email)) = LOWER(TRIM(?))
+                  AND can_pay = 1
+                  AND notification_type = 'auction_end'
+                """,
+                (listing_id, bidder_email),
+            ).fetchone()
+            if not winner_notification:
+                # Backfill a missing winner notification for legacy auctions so
+                # the winner can still complete payment from the dashboard link.
+                create_bidder_notification(
+                    connection=con,
+                    listing_id=listing_id,
+                    bidder_email=bidder_email,
+                    seller_email=listing["seller_email"],
+                    winner_email=bidder_email,
+                    highest_bid=winning_price,
+                    can_pay=1,
+                    notification_type="auction_end",
+                    message=(
+                        f"Auction #{listing_id} ended. Highest bid: ${float(winning_price):.2f}. "
+                        "You won this auction. You may now complete payment."
+                    ),
+                )
+                con.commit()
 
             # check if bidder already paid
             already_paid = con.execute("""
@@ -714,7 +1264,7 @@ def payment_page(listing_id):
             """, (listing_id,)).fetchone()
 
             if already_paid:
-                return render_template("pay.html", error="Payment already completed for this auction.", listing=None)
+                return render_template("payment.html", error="Payment already completed for this auction.", listing=None)
             # load saved cards from credit_card table
             saved_cards = con.execute("""
                 SELECT credit_card_num, card_type, expire_month, expire_year
@@ -768,6 +1318,11 @@ def payment_page(listing_id):
                         INSERT INTO Transact (seller_email, listing_ID, bidder_email, date, payment)
                         VALUES (?, ?, ?, ?, ?)
                     """, (listing["seller_email"], listing_id, bidder_email, today, winning_price))
+                    # Ensure listing remains sold once payment is submitted.
+                    con.execute(
+                        "UPDATE Auction_Listing SET status = 2 WHERE listing_ID = ?",
+                        (listing_id,),
+                    )
                     con.commit()
                     success = True
 
@@ -1068,8 +1623,9 @@ def seller_products():
                     category = request.form.get("category", "").strip()
                     reserve_price_raw = request.form.get("reserve_price", "").strip()
                     max_bids_raw = request.form.get("max_bids", "").strip()
+                    end_time_raw = request.form.get("end_time", "").strip()
 
-                    if not title or not description or not category or not reserve_price_raw or not max_bids_raw:
+                    if not title or not description or not category or not reserve_price_raw or not max_bids_raw or not end_time_raw:
                         error = "Please fill in all listing fields."
                     else:
                         try:
@@ -1083,6 +1639,13 @@ def seller_products():
                             elif max_bids_value <= 0:
                                 error = "Max bids must be greater than zero."
                             else:
+                                end_time_db = parse_datetime_local_input(end_time_raw)
+                                if not end_time_db:
+                                    error = "Invalid end date/time."
+                                elif end_time_db <= current_db_timestamp():
+                                    error = "End time must be in the future."
+
+                            if not error:
                                 category_exists = con.execute(
                                     """
                                     SELECT category_name
@@ -1098,8 +1661,8 @@ def seller_products():
                                         """
                                         INSERT INTO Auction_Listing
                                         (seller_email, category, auction_title, product_name, product_description,
-                                         quantity, reserve_price, max_bids, status)
-                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                         quantity, reserve_price, max_bids, status, start_time, end_time)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                         """,
                                         (
                                             seller_email,
@@ -1111,6 +1674,8 @@ def seller_products():
                                             f"${reserve_price_value:.2f}",
                                             max_bids_value,
                                             1,
+                                            current_db_timestamp(),
+                                            end_time_db,
                                         ),
                                     )
                                     con.commit()
@@ -1145,7 +1710,7 @@ def seller_products():
 
             rows = con.execute(
                 """
-                SELECT listing_ID, auction_title, category, reserve_price, max_bids, status
+                SELECT listing_ID, auction_title, category, reserve_price, max_bids, status, end_time
                 FROM Auction_Listing
                 WHERE LOWER(TRIM(seller_email)) = ?
                 ORDER BY listing_ID DESC
@@ -1161,6 +1726,7 @@ def seller_products():
                     "reserve_price": f"{parse_reserve_price(row['reserve_price']):.2f}",
                     "max_bids": row["max_bids"],
                     "status": listing_status_label(row["status"]),
+                    "end_time": row["end_time"] or "",
                 }
                 for row in rows
             ]
