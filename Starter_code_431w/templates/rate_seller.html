@@ -9,12 +9,8 @@
 
     <style>
         html, body {
-            min-height: 100%;
             margin: 0;
-            overflow-y: auto;
-        }
-
-        body {
+            min-height: 100%;
             font-family: Arial, sans-serif;
             background-image:
                 linear-gradient(rgba(4, 30, 66, 0.75), rgba(3, 26, 60, 0.91)),
@@ -24,14 +20,58 @@
             background-repeat: no-repeat;
         }
 
+        .banner {
+            background:
+                linear-gradient(rgba(4, 33, 73, 0.75), rgba(3, 26, 60, 0.91))
+                #001E44;
+            color: white;
+            padding: 14px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #001735;
+        }
+
+        .banner-left .brand {
+            color: white;
+            text-decoration: none;
+            font-size: 30px;
+            font-weight: bold;
+            font-family: 'Roboto', sans-serif;
+        }
+
+        .banner-right a {
+            color: white;
+            text-decoration: none;
+            margin-left: 35px;
+            font-size: 22px;
+            font-weight: bold;
+            font-family: 'Roboto', sans-serif;
+        }
+
+        .banner-right a:hover,
+        .banner-left .brand:hover {
+            text-decoration: underline;
+        }
+
         .rating-box {
             width: 500px;
-            margin: 100px auto;
+            margin: 60px auto;
             background: #eff3fa;
             padding: 30px;
             border: 1px solid #031631;
             border-radius: 10px;
         }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 16px;
+            font-size: 14px;
+            color: #2a6ebb;
+            text-decoration: none;
+        }
+
+        .back-link:hover { text-decoration: underline; }
 
         h2 {
             margin-top: 0;
@@ -64,6 +104,7 @@
             border: none;
             border-radius: 8px;
             cursor: pointer;
+            font-size: 15px;
         }
 
         button:hover {
@@ -87,6 +128,8 @@
 {% include "banner.html" %}
 
 <div class="rating-box">
+    <a class="back-link" href="{{ url_for('bidder_home') }}">← Back to Dashboard</a>
+
     <h2>Rate Seller</h2>
 
     {% if error %}

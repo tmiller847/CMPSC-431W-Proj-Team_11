@@ -247,17 +247,23 @@
                     <td>${{ a['my_highest_bid'] }}</td>
                     <td>${{ a['highest_bid'] }}</td>
                     <td>{{ a['bid_count'] }} / {{ a['max_bids'] }}</td>
-                    <td>
+                     <td>
                         {% if a['status'] == 1 %}
                             <a href="/bid/{{ a['listing_ID'] }}">Bid</a>
                         {% elif a['status'] == 2 and a['my_highest_bid'] == a['highest_bid'] %}
-                            <a href="/pay/{{ a['listing_ID'] }}">Pay</a>
+                            {% if not a['has_paid'] %}
+                                <a href="/pay/{{ a['listing_ID'] }}">Pay</a>
+                            {% elif not a['has_rated'] %}
+                                <a href="/rate/{{ a['listing_ID'] }}">Rate Seller</a>
+                            {% else %}
+                                Done
+                            {% endif %}
                         {% else %}
                             —
                         {% endif %}
-                    </td>
-                </tr>
-            {% endfor %}
+                </td>
+            </tr>
+        {% endfor %}
 
 
         </table>
