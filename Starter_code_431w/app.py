@@ -158,14 +158,33 @@ def build_profile_data(connection, email):
 
     local_vendor = connection.execute(
         """
-        SELECT customer_service_phone_number
+        SELECT business_name, business_address_id, customer_service_phone_number
         FROM Local_Vendor
         WHERE LOWER(TRIM(email)) = ?
         """,
         (email.strip().lower(),),
     ).fetchone()
     if local_vendor and local_vendor["customer_service_phone_number"]:
+        profile["name"] = local_vendor["business_name"]
         profile["phone"] = local_vendor["customer_service_phone_number"]
+
+        if local_vendor["business_address_id"]:
+            address = connection.execute(
+                """
+                SELECT a.street_num, a.street_name, a.zipcode, z.city, z.state
+                FROM Address a
+                LEFT JOIN Zipcode z ON z.zipcode = a.zipcode
+                WHERE a.address_id = ?
+                """,
+                (local_vendor["business_address_id"],),
+            ).fetchone()
+            if address:
+                street_num = "" if address["street_num"] is None else str(address["street_num"])
+                street_name = address["street_name"] or ""
+                profile["street"] = " ".join([street_num, street_name]).strip()
+                profile["zipcode"] = "" if address["zipcode"] is None else str(address["zipcode"])
+                profile["city"] = address["city"] or ""
+                profile["state"] = address["state"] or ""
 
     return profile, roles
 
