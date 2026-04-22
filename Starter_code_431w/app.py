@@ -1061,9 +1061,10 @@ def search(category=None):
 
 
                 subcategories = con.execute("""
-                    SELECT category_name FROM Category
-                    WHERE parent_category = ?
-                    ORDER BY category_name
+                    SELECT TRIM(category_name) AS category_name
+                    FROM Category
+                    WHERE LOWER(TRIM(parent_category)) = LOWER(TRIM(?))
+                    ORDER BY TRIM(category_name)
                 """, (category,)).fetchall()
 
 
@@ -1095,7 +1096,7 @@ def search(category=None):
 
 
             if category:
-                query += " AND al.category = ?"
+                query += " AND LOWER(TRIM(al.category)) = LOWER(TRIM(?))"
                 params.append(category)
 
             if keyword:
