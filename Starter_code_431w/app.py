@@ -363,60 +363,122 @@ def helpdesk_home():
         session['login_error'] = 'You must be a Helpdesk Member to access this feature. Please log in.'
         return redirect(url_for("login"))
     return render_template("helpdesk_home.html", email=session["email"])
-@app.route('/search', methods=['GET'])
-def search():
-    error = None
-    results = []
 
+
+
+@app.route('/search')
+@app.route('/search/<path:category>')
+def search(category=None):
+    if "email" not in session:
+        return render_template("login.html", error="Please log in first.")
+
+    error = None
+    subcategories = []
+    products = []
+    breadcrumb = [] # build breadcrumb to track user's path
     keyword = request.args.get('keyword', '').strip()
     min_price = request.args.get('min_price', '').strip()
     max_price = request.args.get('max_price', '').strip()
+    is_search = bool(keyword or min_price or max_price)
 
     try:
-        with get_connection() as connection:
+        with get_connection() as con:
+            if category is None:
+                subcategories = con.execute("""
+                    SELECT category_name FROM Category
+                    WHERE parent_category = 'Root'
+                    ORDER BY category_name
+                """).fetchall()
+                breadcrumb = [("All", None)]
+
+            else:
+
+                breadcrumb = [("All", "/search")]
+                crumb_cat = category
+                crumb_trail = []
+                while crumb_cat:
+                    parent_row = con.execute(
+                        "SELECT parent_category FROM Category WHERE category_name = ?",
+                        (crumb_cat,)
+                    ).fetchone()
+                    crumb_trail.append(crumb_cat)
+                    if parent_row and parent_row["parent_category"] != "Root":
+                        crumb_cat = parent_row["parent_category"]
+                    else:
+                        break
+
+
+                for name in reversed(crumb_trail):
+                    breadcrumb.append((name, f"/search/{name}"))
+                if breadcrumb:
+                    last = breadcrumb[-1]
+                    breadcrumb[-1] = (last[0], None)
+
+
+                subcategories = con.execute("""
+                    SELECT category_name FROM Category
+                    WHERE parent_category = ?
+                    ORDER BY category_name
+                """, (category,)).fetchall()
+
+
             query = """
-                SELECT Listing_ID, Auction_Title, Product_Name, Product_Description,
-                       Category, Seller_Email, Reserve_Price, Status
-                FROM Auction_Listing
-                WHERE Status = 1
+                SELECT al.listing_ID, al.auction_title, al.product_name,
+                       al.seller_email, al.reserve_price, al.category,
+                       COUNT(b.bid_ID) AS bid_count,
+                       MAX(b.bid_price) AS highest_bid,
+                       al.max_bids
+                FROM Auction_Listing al
+                LEFT JOIN Bid b ON al.listing_ID = b.listing_ID
+                WHERE al.status = 1
             """
             params = []
+
+
+
+            if category:
+                query += " AND al.category = ?"
+                params.append(category)
 
             if keyword:
                 query += """
                     AND (
-                        LOWER(Auction_Title) LIKE ?
-                        OR LOWER(Product_Description) LIKE ?
-                        OR LOWER(Category) LIKE ?
-                        OR LOWER(Seller_Email) LIKE ?
+                        LOWER(al.auction_title) LIKE ?
+                        OR LOWER(al.product_description) LIKE ?
+                        OR LOWER(al.category) LIKE ?
+                        OR LOWER(al.seller_email) LIKE ?
                     )
                 """
-                like_keyword = "%" + keyword.lower() + "%"
-                params.extend([like_keyword, like_keyword, like_keyword, like_keyword])
+                like = "%" + keyword.lower() + "%"
+                params.extend([like, like, like, like])
 
             if min_price:
-                clean_min = min_price.replace("$", "").replace(",", "").strip()
-                query += " AND CAST(REPLACE(SUBSTR(Reserve_Price, 2), ',', '') AS REAL) >= ?"
-                params.append(clean_min)
+                query += " AND CAST(REPLACE(REPLACE(al.reserve_price, '$', ''), ' ', '') AS REAL) >= ?"
+                params.append(float(min_price))
 
             if max_price:
-                clean_max = max_price.replace("$", "").replace(",", "").strip()
-                query += " AND CAST(REPLACE(SUBSTR(Reserve_Price, 2), ',', '') AS REAL) <= ?"
-                params.append(clean_max)
+                query += " AND CAST(REPLACE(REPLACE(al.reserve_price, '$', ''), ' ', '') AS REAL) <= ?"
+                params.append(float(max_price))
 
-            results = connection.execute(query, params).fetchall()
+            query += " GROUP BY al.listing_ID ORDER BY al.listing_ID DESC"
+            products = con.execute(query, params).fetchall()
 
     except sql.Error as e:
-        print("Database error:", e)
-        error = "Database error while searching."
+        print("DB error in search:", e)
+        error = "Database error while loading categories."
 
     return render_template(
         "search.html",
-        results=results,
+        category=category,
+        subcategories=subcategories,
+        products=products,
+        breadcrumb=breadcrumb,
         error=error,
+        role=session.get("role"),
         keyword=keyword,
         min_price=min_price,
-        max_price=max_price
+        max_price=max_price,
+        is_search=is_search,
     )
 
 @app.route('/product/<int:listing_id>')
