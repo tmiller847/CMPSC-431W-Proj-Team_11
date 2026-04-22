@@ -19,6 +19,7 @@ IMPLEMENTED FEATURES:
 We have fully implemented...
 - Login/Logout/Signup pages, where HelpDesk approval is required to create a new HelpDesk account.
 - Dashboards for each user type
+	- Includes easy access to HelpDesk features, including account, email change, and category approval
 - [+ Extra Feature] A "Role View" feature, which allows non-Bidders to act as bidders without creating an entirely new account
 - A banner for quick navigation to other pages
 - A user page, where user data can be changed
@@ -28,9 +29,13 @@ We have fully implemented...
 - Includes separate bidding and credit card info pages
 - Created using a product creation page
 - [+ Extra Feature] A wishlist feature, where a user can be notified of activities on given products
+	- Note, users are always notified if they're outbid
 - A product library for sellers to look at everything they've ever published
+- A ratings system which includes the ratings of sellers for every product they sell
 - A help page to submit helpdesk requests
 - A sleek user interface
+- Clean, visible links between pages
+- Cookie usage to maintain user information for an entire session
 
 All features should be completed to the satisfaction of the project guidelines
 
